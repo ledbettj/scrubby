@@ -1,0 +1,10 @@
+[package]
+name = "scrubby"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.81"
+mlua = { version = "0.9.6", features = ["lua54", "send"] }
+serenity = { version = "0.12.1", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "framework", "standard_framework", "cache"] }
+tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread"] }
