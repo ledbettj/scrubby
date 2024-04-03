@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 mod event_dispatch;
 mod event_handler;
 mod lua_context;
+mod user_data;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

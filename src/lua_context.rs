@@ -2,25 +2,13 @@ use std::fs::File;
 use std::io::Read;
 
 use mlua::Lua;
+use regex::Regex;
 use serenity::{
   model::{channel::Message, gateway::Ready},
   prelude::Context,
 };
 
-#[derive(Clone)]
-struct LuaMessage(Message);
-
-impl<'lua> mlua::IntoLua<'lua> for LuaMessage {
-  fn into_lua(self, lua: &'lua Lua) -> mlua::Result<mlua::Value<'lua>> {
-    let msg = self.0;
-    let tbl = lua.create_table()?;
-    tbl.set("id", msg.id.get())?;
-    tbl.set("author", msg.author.name)?;
-    tbl.set("content", msg.content)?;
-
-    Ok(mlua::Value::Table(tbl))
-  }
-}
+use crate::user_data::LuaMessage;
 
 pub struct LuaContext {
   plugin_path: String,
@@ -43,6 +31,9 @@ impl LuaContext {
     } else {
       let bot: mlua::Table = self.lua.globals().get("Bot")?;
       let plugins: mlua::Table = bot.get("plugins")?;
+      let commands: mlua::Table = bot.get("commands")?;
+
+      commands.clear()?;
       plugins.clear()?;
     }
     self.load_files()?;
@@ -50,21 +41,33 @@ impl LuaContext {
   }
 
   pub fn dispatch_message(&self, m: &Message, _c: &Context) -> anyhow::Result<Vec<String>> {
-    let lua_msg = LuaMessage(m.clone());
+    let lua_msg: LuaMessage = m.into();
     let bot: mlua::Table = self.lua.globals().get("Bot")?;
-    let plugins: mlua::Table = bot.get("plugins")?;
     let mut replies = vec![];
+    let commands: mlua::Table = bot.get("commands")?;
 
-    plugins.for_each::<String, mlua::Table>(|name, plugin| {
-      let f: mlua::Function = plugin.get("on_message")?;
-      match f.call::<LuaMessage, Option<String>>(lua_msg.clone()) {
-        Ok(None) => { /* no op */ }
-        Ok(Some(s)) => replies.push(s),
-        Err(e) => replies.push(format!(
-          "lua error: dispatching event to {} failed: {}",
-          name, e
-        )),
-      };
+    commands.for_each::<String, mlua::Function>(|cmd, callback| {
+      match Regex::new(&cmd) {
+        Ok(r) => {
+          if let Some(captures) = r.captures(&m.content) {
+            let caps: Vec<String> = captures
+              .iter()
+              .filter_map(|c| c)
+              .map(|c| c.as_str().to_owned())
+              .collect();
+
+            match callback.call((lua_msg.clone(), caps)) {
+              Ok(None) => { /* no op */ }
+              Ok(Some(s)) => replies.push(s),
+              Err(e) => replies.push(format!(
+                "lua error: dispatching command {} failed: {}",
+                cmd, e
+              )),
+            };
+          }
+        }
+        Err(e) => replies.push(format!("Invalid command format '{}' : {:?}'", cmd, e)),
+      }
       Ok(())
     })?;
 
@@ -95,13 +98,10 @@ impl LuaContext {
     let bot = self.lua.create_table()?;
     let plugin = self.lua.create_function(|l: &Lua, name: String| {
       let tbl = l.create_table()?;
-      let def = l.create_function(|_, ()| Ok(()))?;
       tbl.set("name", name)?;
-      tbl.set("on_message", def)?;
       Ok(tbl)
     })?;
 
-    let plugins = self.lua.create_table()?;
     let register = self.lua.create_function(|l: &Lua, tbl: mlua::Table| {
       let bot: mlua::Table = l.globals().get("Bot")?;
       let name: String = tbl.get("name")?;
@@ -112,9 +112,21 @@ impl LuaContext {
       Ok(())
     })?;
 
+    let command =
+      self
+        .lua
+        .create_function(|l: &Lua, (cmd, callback): (String, mlua::Function)| {
+          let bot: mlua::Table = l.globals().get("Bot")?;
+          let cmds: mlua::Table = bot.get("commands")?;
+          cmds.set(cmd, callback)?;
+          Ok(())
+        })?;
+
     bot.set("plugin", plugin)?;
-    bot.set("plugins", plugins)?;
     bot.set("register", register)?;
+    bot.set("plugins", self.lua.create_table()?)?;
+    bot.set("commands", self.lua.create_table()?)?;
+    bot.set("command", command)?;
 
     self.lua.globals().set("Bot", bot)?;
 
