@@ -2,7 +2,10 @@ use std::fs::File;
 use std::io::Read;
 
 use mlua::Lua;
-use serenity::{model::channel::Message, prelude::Context};
+use serenity::{
+  model::{channel::Message, gateway::Ready},
+  prelude::Context,
+};
 
 #[derive(Clone)]
 struct LuaMessage(Message);
@@ -34,9 +37,14 @@ impl LuaContext {
     }
   }
 
-  pub fn load_plugins(&mut self) -> anyhow::Result<()> {
-    self.lua = Lua::new();
-    self.init_tables()?;
+  pub fn load_plugins(&mut self, reload: bool) -> anyhow::Result<()> {
+    if !reload {
+      self.init_tables()?;
+    } else {
+      let bot: mlua::Table = self.lua.globals().get("Bot")?;
+      let plugins: mlua::Table = bot.get("plugins")?;
+      plugins.clear()?;
+    }
     self.load_files()?;
     Ok(())
   }
@@ -61,6 +69,12 @@ impl LuaContext {
     })?;
 
     Ok(replies)
+  }
+
+  pub fn process_ready_event(&self, r: &Ready) -> anyhow::Result<()> {
+    let bot: mlua::Table = self.lua.globals().get("Bot")?;
+    bot.set("name", r.user.name.clone())?;
+    Ok(())
   }
 
   fn load_files(&self) -> anyhow::Result<()> {
