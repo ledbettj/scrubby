@@ -1,2 +1,4 @@
 /target
 .discord-token
+pkgs/*
+!pkgs/.gitkeep

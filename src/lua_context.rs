@@ -8,6 +8,7 @@ use serenity::{
   prelude::Context,
 };
 
+use crate::lua_loader;
 use crate::user_data::LuaMessage;
 
 pub struct LuaContext {
@@ -95,6 +96,13 @@ impl LuaContext {
   }
 
   fn init_tables(&self) -> anyhow::Result<()> {
+    let pkg: mlua::Table = self.lua.globals().get("package")?;
+    let searchers: mlua::Table = pkg.get("searchers")?;
+
+    let search_fn = lua_loader::module_search(&self.lua)?;
+    searchers.clear()?;
+    searchers.push(search_fn)?;
+
     let bot = self.lua.create_table()?;
     let plugin = self.lua.create_function(|l: &Lua, name: String| {
       let tbl = l.create_table()?;
