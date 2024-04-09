@@ -14,11 +14,15 @@ fn load_files(path: &str, root_path: &str, packages: &mut File) -> Result<(), Bo
     if ft.is_dir() {
       load_files(&f.path().to_string_lossy(), root_path, packages)?;
     } else if ft.is_file() {
+      let p = f.path();
+      if p.extension().and_then(|s| s.to_str()) != Some("lua") {
+        continue;
+      }
       writeln!(
         packages,
         r##"("{rel_name}", include_str!(r#"{name}"#)),"##,
-        rel_name = f.path().strip_prefix(root_path)?.display(),
-        name = f.path().display()
+        rel_name = p.strip_prefix(root_path)?.display(),
+        name = p.display()
       )?;
     } else {
       continue;
