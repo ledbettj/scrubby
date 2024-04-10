@@ -1,12 +1,12 @@
 use mlua::{IntoLua, Lua};
 
-use crate::bindings::http::http_loader;
+use crate::bindings::{bot::bot_loader, http::http_loader};
 
 const LUA_PACKAGES: &[(&str, &str)] = &include!(concat!(env!("OUT_DIR"), "/lua_packages.rs"));
 const LUA_MODULES: [(
   &str,
   for<'a> fn(&'a Lua) -> Result<mlua::Table<'a>, mlua::Error>,
-); 1] = [("http", http_loader)];
+); 2] = [("http", http_loader), ("bot", bot_loader)];
 
 pub fn module_search(lua: &Lua) -> Result<mlua::Function, mlua::Error> {
   lua.create_function(|l, modname: String| {
