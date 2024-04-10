@@ -2,6 +2,7 @@ use event_dispatch::event_dispatch;
 use serenity::prelude::*;
 use tokio::sync::mpsc;
 
+mod bindings;
 mod event_dispatch;
 mod event_handler;
 mod lua_context;

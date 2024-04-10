@@ -1,30 +1,31 @@
-use mlua::IntoLua;
+use mlua::{IntoLua, Lua};
+
+use crate::bindings::http::http_loader;
 
 const LUA_PACKAGES: &[(&str, &str)] = &include!(concat!(env!("OUT_DIR"), "/lua_packages.rs"));
+const LUA_MODULES: [(
+  &str,
+  for<'a> fn(&'a Lua) -> Result<mlua::Table<'a>, mlua::Error>,
+); 1] = [("http", http_loader)];
 
-fn test(lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
-  let e = lua.create_table()?;
-  e.set("test", "it is")?;
-  Ok(e)
-}
-
-pub fn module_search(lua: &mlua::Lua) -> Result<mlua::Function, mlua::Error> {
-
+pub fn module_search(lua: &Lua) -> Result<mlua::Function, mlua::Error> {
   lua.create_function(|l, modname: String| {
-    let target = format!("{}.lua", modname.replace(".", "/"));
     // check for native lua modules.
-    if modname == "test2" {
-      return l.create_function(move |nl, _ : mlua::Value|{
-        test(nl)
-      })?.into_lua(l);
+    for &(pkg, loader) in &LUA_MODULES {
+      if modname == pkg {
+        return l
+          .create_function(move |nl, _: mlua::Value| loader(nl))?
+          .into_lua(l);
+      }
     }
 
+    let target = format!("{}.lua", modname.replace(".", "/"));
     // check for embedded .lua modules
     for &(pkg, contents) in LUA_PACKAGES {
       if pkg == &target {
-        return l.create_function(move |nl, _ : mlua::Value|{
-          nl.load(contents).eval::<mlua::Value>()
-        })?.into_lua(l);
+        return l
+          .create_function(move |nl, _: mlua::Value| nl.load(contents).eval::<mlua::Value>())?
+          .into_lua(l);
       }
     }
 
