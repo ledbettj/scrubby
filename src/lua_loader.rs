@@ -6,7 +6,7 @@ const LUA_PACKAGES: &[(&str, &str)] = &include!(concat!(env!("OUT_DIR"), "/lua_p
 const LUA_MODULES: [(
   &str,
   for<'a> fn(&'a Lua) -> Result<mlua::Table<'a>, mlua::Error>,
-); 2] = [("http", http_loader), ("bot", bot_loader)];
+); 2] = [("bot", bot_loader), ("http", http_loader)];
 
 pub fn module_search(lua: &Lua) -> Result<mlua::Function, mlua::Error> {
   lua.create_function(|l, modname: String| {

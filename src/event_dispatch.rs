@@ -7,7 +7,7 @@ use crate::event_handler::Event;
 use crate::lua_context::LuaContext;
 
 pub async fn event_dispatch(mut rx: mpsc::UnboundedReceiver<Event>) -> () {
-  let mut lua_ctx = LuaContext::new("./scripts");
+  let mut lua_ctx = LuaContext::new("./plugins");
 
   if let Err(e) = lua_ctx.load_plugins(false) {
     println!("Error loading plugins: {}", e);
