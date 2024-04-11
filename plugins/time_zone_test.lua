@@ -5,6 +5,8 @@ local json = require("json")
 local plugin = bot.plugin("Time Test")
 local cache = plugin.cache
 
+cache:load()
+
 local zones = cache:get("zones")
 if not zones then
    zones = {}
@@ -14,6 +16,7 @@ if not zones then
       zones[v] = true
    end
    cache:set("zones", zones)
+   cache:save()
 else
    print("using cached zones")
 end

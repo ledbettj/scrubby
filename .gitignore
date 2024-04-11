@@ -1,2 +1,4 @@
 /target
 .discord-token
+/cache/*
+!/cache/.gitkeep

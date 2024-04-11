@@ -75,13 +75,13 @@ impl LuaContext {
                 Ok(None) => { /* no op */ }
                 Ok(Some(s)) => replies.push(s),
                 Err(e) => replies.push(format!(
-                  "lua error: dispatching command {} to {} failed: {}",
+                  "lua error: dispatching command {} to {} failed: ```\n{}\n```",
                   cmd, plugname, e
                 )),
               };
             }
           }
-          Err(e) => replies.push(format!("Invalid command format '{}' : {:?}'", cmd, e)),
+          Err(e) => replies.push(format!("Invalid command format `{}` : `{:?}`", cmd, e)),
         }
         Ok(())
       })?;
@@ -106,10 +106,15 @@ impl LuaContext {
     for entry in std::fs::read_dir(&self.plugin_path)? {
       let entry = entry?;
       if let Some("lua") = entry.path().extension().and_then(|os| os.to_str()) {
+        let file_name = entry.file_name();
         let mut file = File::open(entry.path())?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
-        self.lua.load(buf).exec()?;
+        self
+          .lua
+          .load(buf)
+          .set_name(file_name.to_string_lossy())
+          .exec()?;
       }
     }
 
