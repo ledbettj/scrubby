@@ -1,9 +1,10 @@
 use std::fs::File;
 use std::io::Read;
 
-use mlua::{Lua, Table};
+use mlua::{ExternalError, Lua, Table};
 use regex::Regex;
 use serenity::{
+  builder::{CreateEmbed, CreateEmbedFooter, CreateMessage},
   model::{channel::Message, gateway::Ready},
   prelude::Context,
 };
@@ -47,7 +48,11 @@ impl LuaContext {
     Ok(())
   }
 
-  pub fn dispatch_message(&self, m: &Message, _c: &Context) -> anyhow::Result<Vec<String>> {
+  pub fn dispatch_message(
+    &self,
+    m: &Message,
+    _c: &Context,
+  ) -> anyhow::Result<Vec<(Option<String>, Option<CreateMessage>)>> {
     let lua_msg: LuaMessage = m.into();
     let plugins: mlua::Table = self
       .lua
@@ -57,7 +62,7 @@ impl LuaContext {
       .get::<&str, Table>("bot")?
       .get::<&str, Table>("plugins")?;
 
-    let mut replies = vec![];
+    let mut replies: Vec<(Option<String>, Option<CreateMessage>)> = vec![];
 
     plugins.for_each::<String, mlua::Table>(|plugname, plugin| {
       let commands: mlua::Table = plugin.get("commands")?;
@@ -73,15 +78,28 @@ impl LuaContext {
 
               match callback.call((lua_msg.clone(), caps)) {
                 Ok(None) => { /* no op */ }
-                Ok(Some(s)) => replies.push(s),
-                Err(e) => replies.push(format!(
-                  "lua error: dispatching command {} to {} failed: ```\n{}\n```",
-                  cmd, plugname, e
+                Ok(Some(mlua::Value::String(s))) => {
+                  replies.push((Some(s.to_str()?.to_owned()), None))
+                }
+                Ok(Some(mlua::Value::Table(t))) => {
+                  let msg = self.build_message(&t).map_err(|e| e.into_lua_err())?;
+                  replies.push((None, Some(msg)));
+                }
+                Ok(_) => {}
+                Err(e) => replies.push((
+                  Some(format!(
+                    "lua error: dispatching command {} to {} failed: ```\n{}\n```",
+                    cmd, plugname, e
+                  )),
+                  None,
                 )),
               };
             }
           }
-          Err(e) => replies.push(format!("Invalid command format `{}` : `{:?}`", cmd, e)),
+          Err(e) => replies.push((
+            Some(format!("Invalid command format `{}` : `{:?}`", cmd, e)),
+            None,
+          )),
         }
         Ok(())
       })?;
@@ -169,5 +187,43 @@ impl LuaContext {
     searchers.push(search_fn)?;
 
     Ok(())
+  }
+
+  fn build_message(&self, table: &Table) -> anyhow::Result<CreateMessage> {
+    let mut builder = CreateMessage::new();
+    if let Some(content) = table.get::<&str, Option<String>>("content")? {
+      builder = builder.content(content);
+    }
+
+    if let Some(embed) = table.get::<&str, Option<Table>>("embed")? {
+      let mut e = CreateEmbed::new();
+      if let Some(s) = embed.get::<&str, Option<String>>("title")? {
+        e = e.title(s);
+      }
+      if let Some(s) = embed.get::<&str, Option<String>>("thumbnail")? {
+        e = e.thumbnail(s);
+      }
+      if let Some(s) = embed.get::<&str, Option<String>>("description")? {
+        e = e.description(s);
+      }
+      if let Some(s) = embed.get::<&str, Option<String>>("footer")? {
+        e = e.footer(CreateEmbedFooter::new(s));
+      }
+
+      if let Some(f) = embed.get::<&str, Option<Table>>("fields")? {
+        for pair in f.pairs::<isize, Table>() {
+          let (_, row) = pair?;
+          e = e.field(
+            row.get::<isize, String>(1)?,
+            row.get::<isize, String>(2)?,
+            row.get::<isize, bool>(3)?,
+          );
+        }
+      }
+
+      builder = builder.embed(e);
+    }
+
+    Ok(builder)
   }
 }

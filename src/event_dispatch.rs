@@ -27,10 +27,22 @@ pub async fn event_dispatch(mut rx: mpsc::UnboundedReceiver<Event>) -> () {
 
         if let Ok(replies) = lua_ctx.dispatch_message(&msg, &ctx) {
           for r in replies {
-            msg
-              .reply(&ctx.http(), r)
-              .await
-              .expect("Failed to send reply");
+            match r {
+              (Some(s), None) => {
+                msg
+                  .reply(&ctx.http(), s)
+                  .await
+                  .expect("Failed to send reply");
+              }
+              (None, Some(m)) => {
+                msg
+                  .channel_id
+                  .send_message(ctx.http(), m)
+                  .await
+                  .expect("Failed to send message");
+              }
+              _ => {}
+            }
           }
         }
       }

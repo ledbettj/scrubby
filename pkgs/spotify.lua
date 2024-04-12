@@ -54,7 +54,6 @@ end
 function spotify:search(query)
    local resp = http.get("https://api.spotify.com/v1/search?type=track&q=" .. url_encode(query) .. "&limit=1",
                          { headers = { ['Authorization'] = "Bearer " .. self.access_token } })
-
    local data = json.decode(resp)
 
    return data.tracks.items[1]
