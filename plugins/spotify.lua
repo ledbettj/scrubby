@@ -16,15 +16,15 @@ local refresh_token = plugin.cache:get("refresh_token")
 local access_token = plugin.cache:get("access_token")
 local expires_at = plugin.cache:get("expires_at")
 
-if access_token ~= nil then
+if access_token ~= nil and expires_at > os.time() then
    spotify.refresh_token = refresh_token
    spotify.access_token = access_token
    spotify.expires_at = expires_at
 else
-   -- accounts.spotify.com/authorize?response_type=code&client_id=c021ca2ee0c943e1835fdbef8b89b1cd&scope=user-read-private user-read-email user-modify-playback-state&redirect_uri=https://weirdhorse.party/callback
+   print("https://accounts.spotify.com/authorize?response_type=code&client_id=c021ca2ee0c943e1835fdbef8b89b1cd&scope=user-read-private+user-read-email+user-modify-playback-state&redirect_uri=https://weirdhorse.party/callback")
    -- get code
    -- put it below
-   local code = "..."
+   local code = io.read()
    spotify:auth(code)
    plugin.cache:set("refresh_token", spotify.refresh_token)
    plugin.cache:set("access_token", spotify.access_token)
@@ -33,7 +33,7 @@ else
 end
 
 function plugin:tick(ctx)
-   if os.time() > spotify.expires_at then
+   if os.time() > spotify.expires_at - 60 * 5 then
       spotify:auth_refresh()
       plugin.cache:set("refresh_token", spotify.refresh_token)
       plugin.cache:set("access_token", spotify.access_token)
