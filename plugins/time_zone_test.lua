@@ -10,18 +10,13 @@ cache:load()
 local zones = cache:get("zones")
 if not zones then
    zones = {}
-   print("fetching zones")
    local raw_zones = json.decode(http.get("https://www.timeapi.io/api/TimeZone/AvailableTimeZones"))
    for i, v in ipairs(raw_zones) do
       zones[v] = true
    end
    cache:set("zones", zones)
    cache:save()
-else
-   print("using cached zones")
 end
-
-print(zones[0])
 
 plugin:command("what time is it in ([^?]+)", function(msg, matches)
   local where = matches[2]

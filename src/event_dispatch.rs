@@ -34,9 +34,14 @@ pub async fn event_dispatch(mut rx: mpsc::UnboundedReceiver<Event>) -> () {
           }
         }
       }
-      Event::ReadyEvent(ready) => {
-        if let Err(err) = lua_ctx.process_ready_event(&ready) {
+      Event::ReadyEvent(ready, ctx) => {
+        if let Err(err) = lua_ctx.process_ready_event(&ready, &ctx) {
           println!("ReadyEvent error: {:?}", err);
+        }
+      }
+      Event::TickEvent(ctx) => {
+        if let Err(err) = lua_ctx.process_tick_event(&ctx) {
+          println!("TickEvent error: {:?}", err);
         }
       }
     };

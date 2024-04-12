@@ -8,8 +8,8 @@ use serenity::{
   prelude::Context,
 };
 
-use crate::lua_loader;
 use crate::user_data::LuaMessage;
+use crate::{lua_loader, user_data::LuaClientCtx};
 
 pub struct LuaContext {
   plugin_path: String,
@@ -91,7 +91,7 @@ impl LuaContext {
     Ok(replies)
   }
 
-  pub fn process_ready_event(&self, r: &Ready) -> anyhow::Result<()> {
+  pub fn process_ready_event(&self, r: &Ready, ctx: &Context) -> anyhow::Result<()> {
     let bot: mlua::Table = self
       .lua
       .globals()
@@ -99,6 +99,24 @@ impl LuaContext {
       .get::<&str, Table>("loaded")?
       .get::<&str, Table>("bot")?;
     bot.set("name", r.user.name.clone())?;
+
+    let plugins: mlua::Table = self
+      .lua
+      .globals()
+      .get::<&str, Table>("package")?
+      .get::<&str, Table>("loaded")?
+      .get::<&str, Table>("bot")?
+      .get::<&str, Table>("plugins")?;
+
+    plugins.for_each::<String, mlua::Table>(|plugname, plugin| {
+      if let mlua::Value::Function(ready) = plugin.get::<&str, mlua::Value>("ready")? {
+        if let Err(e) = ready.call::<(Table, LuaClientCtx), ()>((plugin, ctx.into())) {
+          println!("Error invoking ready event for {}: {}", plugname, e);
+        }
+      }
+      Ok(())
+    })?;
+
     Ok(())
   }
 
@@ -117,6 +135,27 @@ impl LuaContext {
           .exec()?;
       }
     }
+
+    Ok(())
+  }
+
+  pub fn process_tick_event(&self, ctx: &Context) -> anyhow::Result<()> {
+    let plugins: mlua::Table = self
+      .lua
+      .globals()
+      .get::<&str, Table>("package")?
+      .get::<&str, Table>("loaded")?
+      .get::<&str, Table>("bot")?
+      .get::<&str, Table>("plugins")?;
+
+    plugins.for_each::<String, mlua::Table>(|plugname, plugin| {
+      if let mlua::Value::Function(tick) = plugin.get::<&str, mlua::Value>("tick")? {
+        if let Err(e) = tick.call::<(Table, LuaClientCtx), ()>((plugin, ctx.into())) {
+          println!("Error invoking tick event for {}: {}", plugname, e);
+        }
+      }
+      Ok(())
+    })?;
 
     Ok(())
   }
