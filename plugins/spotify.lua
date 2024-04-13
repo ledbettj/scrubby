@@ -14,7 +14,7 @@ local refresh_token = plugin.cache:get("refresh_token")
 local access_token = plugin.cache:get("access_token")
 local expires_at = plugin.cache:get("expires_at")
 
-local function save_state(refresh_token, client)
+local function save_state(client)
    plugin.cache:set("refresh_token", client.refresh_token)
    plugin.cache:set("access_token", client.access_token)
    plugin.cache:set("expires_at", client.expires_at)
@@ -26,7 +26,7 @@ if refresh_token ~= nil then
    client.access_token = access_token
    client.expires_at = expires_at
 else
-   print("https://accounts.spotify.com/authorize?response_type=code&client_id=c021ca2ee0c943e1835fdbef8b89b1cd&scope=user-read-private+user-read-email+user-modify-playback-state&redirect_uri=https://weirdhorse.party/callback")
+   print("https://accounts.spotify.com/authorize?response_type=code&client_id=c021ca2ee0c943e1835fdbef8b89b1cd&scope=user-read-private+user-read-email+user-modify-playback-state+user-read-playback-state+user-read-currently-playing&redirect_uri=https://weirdhorse.party/callback")
    -- get code
    -- put it below
    local code = io.read()
@@ -38,7 +38,7 @@ function plugin:tick(ctx)
    if os.time() > client.expires_at - 60 * 5 then
       client:auth_refresh()
       save_state(client)
-      self:print("Refreshed spotify token")
+      self:log("Refreshed spotify token")
    end
 end
 
@@ -52,6 +52,7 @@ plugin:command(
       client:enqueue(r.uri)
 
       return {
+         content = "Queued up!",
          embed = {
             title = r.name,
             thumbnail = r.album.images[1].url,
@@ -62,5 +63,25 @@ plugin:command(
          }
       }
 end)
+
+plugin:command(
+   "what('?)s up next",
+   function(msg, matches)
+      local r = client:list_queue()
+      local q = r.queue[1]
+
+      return {
+         content = "Next Track:",
+         embed = {
+            title = q.name,
+            thumbnail = q.album.images[1].url,
+            fields = {
+               { "Artist", q.artists[1].name, true },
+               { "Album", q.album.name, true }
+            }
+         }
+      }
+end)
+
 
 bot:register(plugin)

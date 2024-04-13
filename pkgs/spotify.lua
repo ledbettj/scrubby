@@ -2,6 +2,9 @@ local http = require('http')
 local json = require('json')
 local b64 = require('base64')
 
+local API_URL = "https://api.spotify.com/v1"
+local ACCOUNTS_URL = "https://accounts.spotify.com/api"
+
 local Client = {}
 
 local function url_encode(str)
@@ -21,7 +24,7 @@ end
 
 function Client:auth(code)
    local resp = http.post(
-      "https://accounts.spotify.com/api/token",
+      ACCOUNTS_URL .. "/token",
       "grant_type=authorization_code&code=" .. code .. "&redirect_uri=https://weirdhorse.party/callback",
       {
          headers = {
@@ -38,7 +41,7 @@ end
 
 function Client:auth_refresh()
    local resp = http.post(
-      "https://accounts.spotify.com/api/token",
+      ACCOUNTS_URL .. "/token",
       "grant_type=refresh_token&refresh_token=" .. self.refresh_token,
       {
          headers = {
@@ -55,7 +58,7 @@ end
 
 function Client:search(query)
    local resp = http.get(
-      "https://api.spotify.com/v1/search?type=track&q=" .. url_encode(query) .. "&limit=1",
+      API_URL .. "/search?type=track&limit=1&q=" .. url_encode(query),
       { headers = { ['Authorization'] = "Bearer " .. self.access_token } }
    )
    local data = json.decode(resp)
@@ -65,10 +68,18 @@ end
 
 function Client:enqueue(track_id)
    http.post(
-      "https://api.spotify.com/v1/me/player/queue?uri=" .. url_encode(track_id),
+      API_URL .. "/me/player/queue?uri=" .. url_encode(track_id),
       "",
       { headers = { ['Authorization'] = "Bearer " .. self.access_token } }
    )
+end
+
+function Client:list_queue()
+   local resp = http.get(
+      API_URL .. "/me/player/queue",
+      { headers = { ['Authorization'] = "Bearer " .. self.access_token } }
+   )
+   return json.decode(resp)
 end
 
 return { Client = Client }
