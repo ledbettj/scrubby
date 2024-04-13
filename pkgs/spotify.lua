@@ -38,7 +38,7 @@ end
 
 function spotify:auth_refresh()
    local resp = http.post("https://accounts.spotify.com/api/token",
-                          "grant_type=refresh_token=" .. self.refresh_token,
+                          "grant_type=refresh_token&refresh_token=" .. self.refresh_token,
                           {
                              headers = {
                                 ["Content-Type"] = "application/x-www-form-urlencoded",
