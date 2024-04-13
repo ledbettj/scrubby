@@ -1,3 +1,4 @@
+use colored::*;
 use serenity::model::channel::Message;
 use serenity::prelude::{CacheHttp, Context};
 
@@ -10,7 +11,7 @@ pub async fn event_dispatch(mut rx: mpsc::UnboundedReceiver<Event>) -> () {
   let mut lua_ctx = LuaContext::new("./plugins");
 
   if let Err(e) = lua_ctx.load_plugins(false) {
-    println!("Error loading plugins: {}", e);
+    println!("[{}] {}", "Error".red().bold(), e);
   }
 
   while let Some(event) = rx.recv().await {
@@ -48,12 +49,12 @@ pub async fn event_dispatch(mut rx: mpsc::UnboundedReceiver<Event>) -> () {
       }
       Event::ReadyEvent(ready, ctx) => {
         if let Err(err) = lua_ctx.process_ready_event(&ready, &ctx) {
-          println!("ReadyEvent error: {:?}", err);
+          println!("[{}] {}", "Error".red().bold(), err);
         }
       }
       Event::TickEvent(ctx) => {
         if let Err(err) = lua_ctx.process_tick_event(&ctx) {
-          println!("TickEvent error: {:?}", err);
+          println!("[{}] {}", "Error".red().bold(), err);
         }
       }
     };

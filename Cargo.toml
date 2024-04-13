@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.81"
+colored = "2.1.0"
 md5 = "0.7.0"
 mlua = { version = "0.9.6", features = ["lua54", "send", "serialize"] }
 regex = "1.10.4"

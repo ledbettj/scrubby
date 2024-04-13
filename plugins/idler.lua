@@ -16,9 +16,9 @@ function plugin:tick(ctx)
    end
    local game = games[math.random(1, #games)]
    ctx:set_activity(game)
+   self:log("activity set to ", game)
    last = os.time()
 end
-
 
 function plugin:ready(ctx)
    ctx:idle()

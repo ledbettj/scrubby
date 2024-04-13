@@ -1,5 +1,6 @@
+use colored::*;
 use mlua::serde::LuaSerdeExt;
-use mlua::{ExternalError, Function as LuaFunction, Lua, Table, Value as LuaValue};
+use mlua::{ExternalError, Function as LuaFunction, Lua, Table, Value as LuaValue, Variadic};
 
 pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
   let tbl = lua.create_table()?;
@@ -62,6 +63,13 @@ pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
       .map_err(|e| e.into_lua_err())
     })?;
 
+    let log = l.create_function(|_: &Lua, (plug, vals): (Table, Variadic<String>)| {
+      let text = vals.into_iter().collect::<String>();
+      let name: String = plug.get("name")?;
+      println!("[{name}] {text}", name = name.cyan().bold(), text = text);
+      Ok(())
+    })?;
+
     cache.set("load", load)?;
     cache.set("save", save)?;
     cache.set("set", set)?;
@@ -72,6 +80,7 @@ pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
     tbl.set("name", name)?;
     tbl.set("commands", l.create_table()?)?;
     tbl.set("command", command)?;
+    tbl.set("log", log)?;
 
     Ok(tbl)
   })?;
@@ -80,7 +89,7 @@ pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
     let plugins: Table = bot.get("plugins")?;
     let name: String = arg.get("name")?;
 
-    println!("Plugin {} registered", &name);
+    println!("[{name}] registered", name = name.cyan().bold());
     plugins.set(name, arg)?;
     Ok(())
   })?;

@@ -14,7 +14,14 @@ local refresh_token = plugin.cache:get("refresh_token")
 local access_token = plugin.cache:get("access_token")
 local expires_at = plugin.cache:get("expires_at")
 
-if access_token ~= nil and expires_at > os.time() then
+local function save_state(refresh_token, client)
+   plugin.cache:set("refresh_token", client.refresh_token)
+   plugin.cache:set("access_token", client.access_token)
+   plugin.cache:set("expires_at", client.expires_at)
+   plugin.cache:save()
+end
+
+if refresh_token ~= nil then
    client.refresh_token = refresh_token
    client.access_token = access_token
    client.expires_at = expires_at
@@ -24,39 +31,36 @@ else
    -- put it below
    local code = io.read()
    client:auth(code)
-
-   plugin.cache:set("refresh_token", client.refresh_token)
-   plugin.cache:set("access_token", client.access_token)
-   plugin.cache:set("expires_at", client.expires_at)
-   plugin.cache:save()
+   save_state(client)
 end
 
 function plugin:tick(ctx)
    if os.time() > client.expires_at - 60 * 5 then
       client:auth_refresh()
-      plugin.cache:set("refresh_token", client.refresh_token)
-      plugin.cache:set("access_token", client.access_token)
-      plugin.cache:set("expires_at", client.expires_at)
-      print("Refreshed spotify token")
-      plugin.cache:save()
+      save_state(client)
+      self:print("Refreshed spotify token")
    end
 end
 
-plugin:command(".*queue up\\s+(.*)", function(msg, matches)
-  local query = matches[2]
-  local r = client:search(query)
-  client:enqueue(r.uri)
+plugin:command(
+   ".*queue up\\s+(.*)",
+   function(msg, matches)
+      local query = matches[2]
+      plugin:log("Searching for ", query)
 
-  return {
-     embed = {
-        title = r.name,
-        thumbnail = r.album.images[1].url,
-        fields = {
-           { "Artist", r.artists[1].name, true },
-           { "Album", r.album.name, true }
-        }
-     }
-  }
+      local r = client:search(query)
+      client:enqueue(r.uri)
+
+      return {
+         embed = {
+            title = r.name,
+            thumbnail = r.album.images[1].url,
+            fields = {
+               { "Artist", r.artists[1].name, true },
+               { "Album", r.album.name, true }
+            }
+         }
+      }
 end)
 
 bot:register(plugin)

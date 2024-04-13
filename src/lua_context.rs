@@ -1,3 +1,4 @@
+use colored::*;
 use std::fs::File;
 use std::io::Read;
 
@@ -29,7 +30,7 @@ impl LuaContext {
 
   pub fn load_plugins(&mut self, reload: bool) -> anyhow::Result<()> {
     if let Err(e) = self.lua.load("math.randomseed(os.time())").exec() {
-      println!("Failed to seed RNG: {}", e);
+      println!("[{}] Failed to seed RNG: {}", "Error".red().bold(), e);
     }
 
     if !reload {
@@ -129,7 +130,12 @@ impl LuaContext {
     plugins.for_each::<String, mlua::Table>(|plugname, plugin| {
       if let mlua::Value::Function(ready) = plugin.get::<&str, mlua::Value>("ready")? {
         if let Err(e) = ready.call::<(Table, LuaClientCtx), ()>((plugin, ctx.into())) {
-          println!("Error invoking ready event for {}: {}", plugname, e);
+          println!(
+            "[{}] [{}] {}",
+            plugname.cyan().bold(),
+            "Error".red().bold(),
+            e
+          );
         }
       }
       Ok(())
@@ -169,7 +175,12 @@ impl LuaContext {
     plugins.for_each::<String, mlua::Table>(|plugname, plugin| {
       if let mlua::Value::Function(tick) = plugin.get::<&str, mlua::Value>("tick")? {
         if let Err(e) = tick.call::<(Table, LuaClientCtx), ()>((plugin, ctx.into())) {
-          println!("Error invoking tick event for {}: {}", plugname, e);
+          println!(
+            "[{}] [{}] {}",
+            plugname.cyan().bold(),
+            "Error".red().bold(),
+            e
+          );
         }
       }
       Ok(())
