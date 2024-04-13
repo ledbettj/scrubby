@@ -5,6 +5,7 @@ pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
   let tbl = lua.create_table()?;
   let plugin = lua.create_function(|l: &Lua, name: String| {
     let tbl = l.create_table()?;
+
     let command = l.create_function(
       |_: &Lua, (plg, cmd, callback): (Table, String, LuaFunction)| {
         let cmds: Table = plg.get("commands")?;
