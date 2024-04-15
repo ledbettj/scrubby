@@ -1,11 +1,50 @@
-use mlua::UserData;
+use mlua::{IntoLua, Lua, UserData};
 use serenity::gateway::ActivityData;
 use serenity::model::channel::Message;
 use serenity::prelude::Context;
 
-pub mod bot;
-pub mod http;
-pub mod json;
+mod bot;
+mod http;
+mod json;
+
+use bot::bot_loader;
+use http::http_loader;
+use json::json_loader;
+
+const LUA_PACKAGES: &[(&str, &str)] = &include!(concat!(env!("OUT_DIR"), "/lua_packages.rs"));
+const LUA_MODULES: [(
+  &str,
+  for<'a> fn(&'a Lua) -> Result<mlua::Table<'a>, mlua::Error>,
+); 3] = [
+  ("bot", bot_loader),
+  ("http", http_loader),
+  ("json", json_loader),
+];
+
+pub fn module_search(lua: &Lua) -> Result<mlua::Function, mlua::Error> {
+  lua.create_function(|l, modname: String| {
+    // check for native lua modules.
+    for &(pkg, loader) in &LUA_MODULES {
+      if modname == pkg {
+        return l
+          .create_function(move |nl, _: mlua::Value| loader(nl))?
+          .into_lua(l);
+      }
+    }
+
+    let target = format!("{}.lua", modname.replace(".", "/"));
+    // check for embedded .lua modules
+    for &(pkg, contents) in LUA_PACKAGES {
+      if pkg == &target {
+        return l
+          .create_function(move |nl, _: mlua::Value| nl.load(contents).eval::<mlua::Value>())?
+          .into_lua(l);
+      }
+    }
+
+    "not found".into_lua(l)
+  })
+}
 
 #[derive(Clone)]
 pub struct LuaMessage(Message);

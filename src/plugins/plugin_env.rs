@@ -10,8 +10,8 @@ use serenity::{
   prelude::Context,
 };
 
-use crate::bindings::{LuaClientCtx, LuaMessage};
-use crate::lua_loader;
+use crate::plugins::module_search;
+use crate::plugins::modules::{LuaClientCtx, LuaMessage};
 
 pub struct PluginEnv {
   path: String,
@@ -242,7 +242,7 @@ impl PluginEnv {
     let pkg: mlua::Table = self.lua.globals().get("package")?;
     let searchers: mlua::Table = pkg.get("searchers")?;
 
-    let search_fn = lua_loader::module_search(&self.lua)?;
+    let search_fn = module_search(&self.lua)?;
     searchers.clear()?;
     searchers.push(search_fn)?;
 

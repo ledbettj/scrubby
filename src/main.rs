@@ -1,10 +1,8 @@
 use serenity::prelude::*;
 use tokio::sync::mpsc;
 
-mod bindings;
 mod bot;
 mod event_handler;
-mod lua_loader;
 mod plugins;
 
 use bot::Bot;
