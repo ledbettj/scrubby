@@ -10,25 +10,25 @@ use serenity::{
   prelude::Context,
 };
 
-use crate::user_data::LuaMessage;
-use crate::{lua_loader, user_data::LuaClientCtx};
+use crate::bindings::{LuaClientCtx, LuaMessage};
+use crate::lua_loader;
 
-pub struct LuaContext {
-  plugin_path: String,
+pub struct PluginEnv {
+  path: String,
   lua: Lua,
 }
 
-impl LuaContext {
-  pub fn new<S: Into<String>>(plugin_path: S) -> Self {
+impl PluginEnv {
+  pub fn new<S: Into<String>>(path: S) -> Self {
     let lua = Lua::new();
 
     Self {
       lua,
-      plugin_path: plugin_path.into(),
+      path: path.into(),
     }
   }
 
-  pub fn load_plugins(&mut self, reload: bool) -> anyhow::Result<()> {
+  pub fn load(&mut self, reload: bool) -> anyhow::Result<()> {
     if let Err(e) = self.lua.load("math.randomseed(os.time())").exec() {
       println!("[{}] Failed to seed RNG: {}", "Error".red().bold(), e);
     }
@@ -194,7 +194,7 @@ impl LuaContext {
   }
 
   fn load_files(&self) -> anyhow::Result<()> {
-    for entry in std::fs::read_dir(&self.plugin_path)? {
+    for entry in std::fs::read_dir(&self.path)? {
       let entry = entry?;
       if let Some("lua") = entry.path().extension().and_then(|os| os.to_str()) {
         let file_name = entry.file_name();

@@ -1,13 +1,13 @@
-use event_dispatch::event_dispatch;
 use serenity::prelude::*;
 use tokio::sync::mpsc;
 
 mod bindings;
-mod event_dispatch;
+mod bot;
 mod event_handler;
-mod lua_context;
 mod lua_loader;
-mod user_data;
+mod plugins;
+
+use bot::Bot;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
     .event_handler(handler)
     .await?;
 
-  tokio::spawn(event_dispatch(rx));
+  tokio::spawn(Bot::start(rx));
 
   client.start().await?;
 
