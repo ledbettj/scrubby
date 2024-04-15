@@ -44,9 +44,9 @@ end
 
 plugin:command(
    ".*queue up\\s+(.*)",
-   function(msg, matches)
+   function(self, msg, matches)
       local query = matches[2]
-      plugin:log("Searching for ", query)
+      self:log("Searching for ", query)
 
       local r = client:search(query)
       client:enqueue(r.uri)
@@ -66,21 +66,25 @@ end)
 
 plugin:command(
    "what('?)s up next",
-   function(msg, matches)
+   function(self, msg, matches)
       local r = client:list_queue()
       local q = r.queue[1]
 
-      return {
-         content = "Next Track:",
-         embed = {
-            title = q.name,
-            thumbnail = q.album.images[1].url,
-            fields = {
-               { "Artist", q.artists[1].name, true },
-               { "Album", q.album.name, true }
+      if q ~= nil then
+         return {
+            content = "Next Track:",
+            embed = {
+               title = q.name,
+               thumbnail = q.album.images[1].url,
+               fields = {
+                  { "Artist", q.artists[1].name, true },
+                  { "Album", q.album.name, true }
+               }
             }
          }
-      }
+      else
+         return "Nothing queued up! Tell me 'queue up ...' to add a song to the queue."
+      end
 end)
 
 

@@ -52,7 +52,7 @@ impl LuaContext {
   pub fn dispatch_message(
     &self,
     m: &Message,
-    _c: &Context,
+    ctx: &Context,
   ) -> anyhow::Result<Vec<(Option<String>, Option<CreateMessage>)>> {
     let lua_msg: LuaMessage = m.into();
     let plugins: mlua::Table = self
@@ -77,7 +77,7 @@ impl LuaContext {
                 .map(|c| c.as_str().to_owned())
                 .collect();
 
-              match callback.call((lua_msg.clone(), caps)) {
+              match callback.call((&plugin, lua_msg.clone(), caps)) {
                 Ok(None) => { /* no op */ }
                 Ok(Some(mlua::Value::String(s))) => {
                   replies.push((Some(s.to_str()?.to_owned()), None))
@@ -107,7 +107,56 @@ impl LuaContext {
       Ok(())
     })?;
 
+    if replies.is_empty() {
+      if let Ok(Some(fallback_reply)) = self.process_fallback_reply(lua_msg, ctx) {
+        replies.push(fallback_reply)
+      }
+    }
+
     Ok(replies)
+  }
+
+  fn process_fallback_reply(
+    &self,
+    lua_msg: LuaMessage,
+    _c: &Context,
+  ) -> anyhow::Result<Option<(Option<String>, Option<CreateMessage>)>> {
+    let plugins: mlua::Table = self
+      .lua
+      .globals()
+      .get::<&str, Table>("package")?
+      .get::<&str, Table>("loaded")?
+      .get::<&str, Table>("bot")?
+      .get::<&str, Table>("plugins")?;
+
+    for pair in plugins.pairs::<String, mlua::Table>() {
+      let (plugname, plugin) = pair?;
+
+      if let Some(fallback) = plugin.get::<&str, Option<mlua::Function>>("fallback")? {
+        match fallback.call((plugin, lua_msg.clone())) {
+          Ok(None) => { /* no op */ }
+          Ok(Some(mlua::Value::String(s))) => {
+            return Ok(Some((Some(s.to_str()?.to_owned()), None)));
+          }
+          Ok(Some(mlua::Value::Table(t))) => {
+            let msg = self.build_message(&t).map_err(|e| e.into_lua_err())?;
+            return Ok(Some((None, Some(msg))));
+          }
+          Ok(_) => {}
+          Err(e) => {
+            return Ok(Some((
+              Some(format!(
+                "lua error: dispatching fallback to {} failed: ```\n{}\n```",
+                plugname, e
+              )),
+              None,
+            )));
+          }
+        };
+      };
+    }
+
+    Ok(None)
   }
 
   pub fn process_ready_event(&self, r: &Ready, ctx: &Context) -> anyhow::Result<()> {

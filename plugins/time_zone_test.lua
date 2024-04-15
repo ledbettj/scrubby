@@ -18,7 +18,7 @@ if not zones then
    cache:save()
 end
 
-plugin:command("what time is it in ([^?]+)", function(msg, matches)
+plugin:command("what time is it in ([^?]+)", function(self, msg, matches)
   local where = matches[2]
   local res = nil
 

@@ -41,7 +41,9 @@ pub async fn event_dispatch(mut rx: mpsc::UnboundedReceiver<Event>) -> () {
                   .channel_id
                   .send_message(ctx.http(), m)
                   .await
-                  .map_err(|err| println!("[{}] Failed to send message: {}", "Error".red().bold(), err))
+                  .map_err(|err| {
+                    println!("[{}] Failed to send message: {}", "Error".red().bold(), err)
+                  })
                   .ok();
               }
               _ => {}
