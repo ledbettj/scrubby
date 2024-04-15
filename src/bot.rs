@@ -1,5 +1,6 @@
 use colored::Colorize;
-use serenity::model::{channel::Message, gateway::Ready};
+use serenity::all::{Channel, ChannelType};
+use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
 use serenity::prelude::*;
 use tokio::sync::mpsc;
 
@@ -12,64 +13,75 @@ pub enum BotEvent {
   TickEvent(Context),
 }
 
-pub struct Bot;
+pub struct Bot {
+  plugin_env: PluginEnv,
+}
 
 impl Bot {
-  pub async fn start(mut rx: mpsc::UnboundedReceiver<BotEvent>) -> () {
-    let mut plugin_env = PluginEnv::new("./plugins");
+  fn new() -> Self {
+    Self {
+      plugin_env: PluginEnv::new("./plugins"),
+    }
+  }
 
-    if let Err(e) = plugin_env.load(false) {
+  pub async fn start(mut rx: mpsc::UnboundedReceiver<BotEvent>) -> () {
+    let mut bot = Bot::new();
+    if let Err(e) = bot.plugin_env.load(false) {
       println!("[{}] {}", "Error".red().bold(), e);
     }
 
     while let Some(event) = rx.recv().await {
-      match &event {
-        BotEvent::MessageEvent(msg, ctx) => {
-          if !Self::message_is_respondable(&msg, &ctx).await {
-            continue;
-          }
+      bot.dispatch_event(&event).await;
+    }
+  }
 
-          if msg.content.contains("reload") {
-            Self::process_reload_request(&msg, &ctx, &mut plugin_env).await;
-            continue;
-          }
+  async fn dispatch_event(&mut self, event: &BotEvent) -> () {
+    match event {
+      BotEvent::MessageEvent(msg, ctx) => {
+        if !Self::message_is_respondable(&msg, &ctx).await {
+          return;
+        }
 
-          if let Ok(replies) = plugin_env.dispatch_message(&msg, &ctx) {
-            for r in replies {
-              match r {
-                (Some(s), None) => {
-                  msg
-                    .reply(&ctx.http(), s)
-                    .await
-                    .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
-                    .ok();
-                }
-                (None, Some(m)) => {
-                  msg
-                    .channel_id
-                    .send_message(ctx.http(), m)
-                    .await
-                    .map_err(|err| {
-                      println!("[{}] Failed to send message: {}", "Error".red().bold(), err)
-                    })
-                    .ok();
-                }
-                _ => {}
+        if msg.content.contains("reload") {
+          Self::process_reload_request(&msg, &ctx, &mut self.plugin_env).await;
+          return;
+        }
+
+        if let Ok(replies) = self.plugin_env.dispatch_message(&msg, &ctx) {
+          for r in replies {
+            match r {
+              (Some(s), None) => {
+                msg
+                  .reply(&ctx.http(), s)
+                  .await
+                  .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
+                  .ok();
               }
+              (None, Some(m)) => {
+                msg
+                  .channel_id
+                  .send_message(ctx.http(), m)
+                  .await
+                  .map_err(|err| {
+                    println!("[{}] Failed to send message: {}", "Error".red().bold(), err)
+                  })
+                  .ok();
+              }
+              _ => {}
             }
           }
         }
-        BotEvent::ReadyEvent(ready, ctx) => {
-          if let Err(err) = plugin_env.process_ready_event(&ready, &ctx) {
-            println!("[{}] {}", "Error".red().bold(), err);
-          }
+      }
+      BotEvent::ReadyEvent(ready, ctx) => {
+        if let Err(err) = self.plugin_env.process_ready_event(&ready, &ctx) {
+          println!("[{}] {}", "Error".red().bold(), err);
         }
-        BotEvent::TickEvent(ctx) => {
-          if let Err(err) = plugin_env.process_tick_event(&ctx) {
-            println!("[{}] {}", "Error".red().bold(), err);
-          }
+      }
+      BotEvent::TickEvent(ctx) => {
+        if let Err(err) = self.plugin_env.process_tick_event(&ctx) {
+          println!("[{}] {}", "Error".red().bold(), err);
         }
-      };
+      }
     }
   }
 
@@ -80,6 +92,17 @@ impl Bot {
     }
     // always respond to private messages
     if msg.is_private() {
+      return true;
+    }
+
+    // respond if it's a thread we're involved in.
+    let channel = msg.channel(ctx.http()).await;
+    if let Ok(Channel::Guild(GuildChannel {
+      kind: ChannelType::PublicThread,
+      member: Some(_),
+      ..
+    })) = channel
+    {
       return true;
     }
 
