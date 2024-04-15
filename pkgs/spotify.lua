@@ -52,7 +52,6 @@ function Client:auth_refresh()
    local data = json.decode(resp)
 
    self.access_token = data.access_token
-   self.refresh_token = data.refresh_token
    self.expires_at = os.time() + data.expires_in
 end
 
