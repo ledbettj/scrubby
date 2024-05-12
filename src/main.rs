@@ -6,6 +6,7 @@ use songbird::{driver::DecodeMode, SerenityInit};
 mod bot;
 mod event_handler;
 mod plugins;
+mod voice;
 
 use bot::Bot;
 

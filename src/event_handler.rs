@@ -21,7 +21,7 @@ use songbird::{
 use tokio::sync::mpsc;
 
 pub enum VoiceEvent {
-  Data(UserId, Vec<i16>),
+  Data(UserId, Vec<f32>),
   Silent,
 }
 
@@ -183,9 +183,10 @@ impl VoiceEventHandler for VoiceHandler {
             // This field should *always* exist under DecodeMode::Decode.
             // The `else` allows you to see how the other modes are affected.
             if let Some(decoded_voice) = data.decoded_voice.as_ref() {
+              let converted = super::voice::convert_pcm(&decoded_voice, 48000, 2, 16000);
               self
                 .tx
-                .send(VoiceEvent::Data(user_id, decoded_voice.clone()))
+                .send(VoiceEvent::Data(user_id, converted))
                 .expect("Failed to write data");
             }
           }

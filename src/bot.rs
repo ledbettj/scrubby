@@ -2,11 +2,10 @@ use colored::Colorize;
 use serenity::all::{Channel, ChannelType, GuildId};
 use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
 use serenity::prelude::*;
-use songbird::input::codecs::{CODEC_REGISTRY, PROBE};
-use songbird::input::Input;
+// use songbird::input::codecs::{CODEC_REGISTRY, PROBE};
+// use songbird::input::Input;
 use songbird::model::id::UserId;
 use std::collections::{HashMap, VecDeque};
-use std::io::Write;
 use tokio::sync::mpsc;
 
 use crate::event_handler::VoiceEvent;
@@ -20,7 +19,7 @@ pub enum BotEvent {
 }
 
 pub struct Bot {
-  voice_data: Vec<i16>,
+  voice_data: Vec<f32>,
   plugin_env: PluginEnv,
 }
 
@@ -35,7 +34,7 @@ impl Bot {
   pub async fn dispatch_voice_event(
     &mut self,
     event: VoiceEvent,
-    storage: &mut HashMap<UserId, VecDeque<i16>>,
+    storage: &mut HashMap<UserId, Vec<f32>>,
   ) -> () {
     match event {
       VoiceEvent::Data(uid, data) => {
@@ -65,7 +64,7 @@ impl Bot {
     mut vrx: mpsc::UnboundedReceiver<VoiceEvent>,
   ) -> () {
     let mut bot = Bot::new();
-    let mut map: HashMap<_, VecDeque<i16>> = HashMap::new();
+    let mut map: HashMap<_, Vec<f32>> = HashMap::new();
 
     if let Err(e) = bot.plugin_env.load(false) {
       println!("[{}] {}", "Error".red().bold(), e);
@@ -135,71 +134,17 @@ impl Bot {
           let mgr = songbird::get(ctx).await.expect("Voice client");
           println!("play time");
           if let Some(handler_lock) = mgr.get(gid.unwrap()) {
-            let mut handler = handler_lock.lock().await;
-            let fsize = 44 + self.voice_data.len() * 2;
-            let dsize = self.voice_data.len() * 2;
-            let rate = 48000;
-            let mul = rate * 16 * 2 / 8;
-            let mut data = vec![
-              'R' as u8,
-              'I' as u8,
-              'F' as u8,
-              'F' as u8,
-              (fsize & 0xFF) as u8,
-              (fsize >> 8) as u8,
-              (fsize >> 16) as u8,
-              (fsize >> 24) as u8,
-              'W' as u8,
-              'A' as u8,
-              'V' as u8,
-              'E' as u8,
-              'f' as u8,
-              'm' as u8,
-              't' as u8,
-              ' ' as u8,
-              16,
-              0,
-              0,
-              0,
-              1,
-              0,
-              2,
-              0,
-              (rate & 0xFF) as u8,
-              (rate >> 8) as u8,
-              (rate >> 16) as u8,
-              (rate >> 24) as u8,
-              (mul & 0xFF) as u8,
-              (mul >> 8) as u8,
-              (mul >> 16) as u8,
-              (mul >> 24) as u8,
-              (16 * 2) / 8 as u8,
-              0,
-              16,
-              0,
-              'd' as u8,
-              'a' as u8,
-              't' as u8,
-              'a' as u8,
-              (dsize & 0xFF) as u8,
-              (dsize >> 8) as u8,
-              (dsize >> 16) as u8,
-              (dsize >> 24) as u8,
-            ];
-            data.extend(
-              self
-                .voice_data
-                .iter()
-                .flat_map(|short| [(short & 0xFF) as u8, (short >> 8) as u8]),
-            );
-            println!("playing!");
-            let mut input: Input = data.into();
-            input = input
-              .make_playable_async(&CODEC_REGISTRY, &PROBE)
-              .await
-              .expect("Oh shit");
-            println!("{:?}", input.is_playable());
-            println!("{:?}", handler.play_input(input));
+            // let mut handler = handler_lock.lock().await;
+            // let data = super::voice::raw_to_wav(&self.voice_data);
+            // println!("playing!");
+            // let mut input: Input = data.into();
+            // input = input
+            //   .make_playable_async(&CODEC_REGISTRY, &PROBE)
+            //   .await
+            //   .expect("Oh shit");
+            // println!("{:?}", input.is_playable());
+            // println!("{:?}", handler.play_input(input));
+            let text = super::voice::recognize(&self.voice_data);
           }
           self.voice_data.clear();
         }
