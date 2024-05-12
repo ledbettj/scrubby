@@ -20,3 +20,5 @@ tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread"] }
 ureq = "2.9.6"
 symphonia = { version = "0.5.2", features = ["wav"] }
 whisper-rs = { version = "0.11.1", features = ["opencl"] }
+sonata-piper = { path = "../sonata/sonata/models/piper" }
+sonata-synth = { path = "../sonata/sonata/synth" }

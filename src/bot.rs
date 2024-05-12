@@ -2,10 +2,10 @@ use colored::Colorize;
 use serenity::all::{Channel, ChannelType, GuildId};
 use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
 use serenity::prelude::*;
-// use songbird::input::codecs::{CODEC_REGISTRY, PROBE};
-// use songbird::input::Input;
+use songbird::input::codecs::{CODEC_REGISTRY, PROBE};
+use songbird::input::Input;
 use songbird::model::id::UserId;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 use crate::event_handler::VoiceEvent;
@@ -40,16 +40,12 @@ impl Bot {
       VoiceEvent::Data(uid, data) => {
         println!("{:?} speaking {:?}", uid, data.len());
 
-        // let bytes = data.iter().flat_map(|val| [(val & 0xFF) as u8, (val >> 8) as u8]).collect::<Vec<u8>>();
-        // stream.write_all(&bytes).expect("Failed to write to stdout");
-
         storage
           .entry(uid)
           .and_modify(|samples| samples.extend(&data))
           .or_insert_with(|| data.into());
       }
       VoiceEvent::Silent => {
-        println!("all quiet {:?}", storage);
         self.voice_data.clear();
         storage
           .iter()
@@ -129,22 +125,20 @@ impl Bot {
         }
       }
       BotEvent::TickEvent(ctx) => {
-        println!("data len {:?}", self.voice_data.len());
         if !self.voice_data.is_empty() {
           let mgr = songbird::get(ctx).await.expect("Voice client");
           println!("play time");
           if let Some(handler_lock) = mgr.get(gid.unwrap()) {
-            // let mut handler = handler_lock.lock().await;
-            // let data = super::voice::raw_to_wav(&self.voice_data);
-            // println!("playing!");
-            // let mut input: Input = data.into();
-            // input = input
-            //   .make_playable_async(&CODEC_REGISTRY, &PROBE)
-            //   .await
-            //   .expect("Oh shit");
-            // println!("{:?}", input.is_playable());
-            // println!("{:?}", handler.play_input(input));
             let text = super::voice::recognize(&self.voice_data);
+            let output = super::voice::generate(&text);
+            let mut handler = handler_lock.lock().await;
+            println!("playing!");
+            let mut input: Input = output.into();
+            input = input
+              .make_playable_async(&CODEC_REGISTRY, &PROBE)
+              .await
+              .expect("Oh shit");
+            handler.play_input(input);
           }
           self.voice_data.clear();
         }
