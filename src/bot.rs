@@ -1,9 +1,15 @@
 use colored::Colorize;
-use serenity::all::{Channel, ChannelType};
+use serenity::all::{Channel, ChannelType, GuildId};
 use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
 use serenity::prelude::*;
+use songbird::input::codecs::{CODEC_REGISTRY, PROBE};
+use songbird::input::Input;
+use songbird::model::id::UserId;
+use std::collections::{HashMap, VecDeque};
+use std::io::Write;
 use tokio::sync::mpsc;
 
+use crate::event_handler::VoiceEvent;
 use crate::plugins::PluginEnv;
 
 #[derive(Debug)]
@@ -14,28 +20,74 @@ pub enum BotEvent {
 }
 
 pub struct Bot {
+  voice_data: Vec<i16>,
   plugin_env: PluginEnv,
 }
 
 impl Bot {
   fn new() -> Self {
     Self {
+      voice_data: vec![],
       plugin_env: PluginEnv::new("./plugins"),
     }
   }
 
-  pub async fn start(mut rx: mpsc::UnboundedReceiver<BotEvent>) -> () {
-    let mut bot = Bot::new();
-    if let Err(e) = bot.plugin_env.load(false) {
-      println!("[{}] {}", "Error".red().bold(), e);
-    }
+  pub async fn dispatch_voice_event(
+    &mut self,
+    event: VoiceEvent,
+    storage: &mut HashMap<UserId, VecDeque<i16>>,
+  ) -> () {
+    match event {
+      VoiceEvent::Data(uid, data) => {
+        println!("{:?} speaking {:?}", uid, data.len());
 
-    while let Some(event) = rx.recv().await {
-      bot.dispatch_event(&event).await;
+        // let bytes = data.iter().flat_map(|val| [(val & 0xFF) as u8, (val >> 8) as u8]).collect::<Vec<u8>>();
+        // stream.write_all(&bytes).expect("Failed to write to stdout");
+
+        storage
+          .entry(uid)
+          .and_modify(|samples| samples.extend(&data))
+          .or_insert_with(|| data.into());
+      }
+      VoiceEvent::Silent => {
+        println!("all quiet {:?}", storage);
+        self.voice_data.clear();
+        storage
+          .iter()
+          .for_each(|(_id, data)| self.voice_data.extend(data));
+        storage.clear();
+      }
     }
   }
 
-  async fn dispatch_event(&mut self, event: &BotEvent) -> () {
+  pub async fn start(
+    mut rx: mpsc::UnboundedReceiver<BotEvent>,
+    mut vrx: mpsc::UnboundedReceiver<VoiceEvent>,
+  ) -> () {
+    let mut bot = Bot::new();
+    let mut map: HashMap<_, VecDeque<i16>> = HashMap::new();
+
+    if let Err(e) = bot.plugin_env.load(false) {
+      println!("[{}] {}", "Error".red().bold(), e);
+    }
+    let mut gid = None;
+
+    loop {
+      tokio::select! {
+        Some(event) = rx.recv() => {
+          if let BotEvent::ReadyEvent(ref ready, _) = event {
+            gid = Some(ready.guilds[0].id);
+          }
+          bot.dispatch_event(&event, gid).await;
+        },
+        Some(event) = vrx.recv() => {
+          bot.dispatch_voice_event(event, &mut map).await;
+        }
+      }
+    }
+  }
+
+  async fn dispatch_event(&mut self, event: &BotEvent, gid: Option<GuildId>) -> () {
     match event {
       BotEvent::MessageEvent(msg, ctx) => {
         if !Self::message_is_respondable(&msg, &ctx).await {
@@ -78,6 +130,80 @@ impl Bot {
         }
       }
       BotEvent::TickEvent(ctx) => {
+        println!("data len {:?}", self.voice_data.len());
+        if !self.voice_data.is_empty() {
+          let mgr = songbird::get(ctx).await.expect("Voice client");
+          println!("play time");
+          if let Some(handler_lock) = mgr.get(gid.unwrap()) {
+            let mut handler = handler_lock.lock().await;
+            let fsize = 44 + self.voice_data.len() * 2;
+            let dsize = self.voice_data.len() * 2;
+            let rate = 48000;
+            let mul = rate * 16 * 2 / 8;
+            let mut data = vec![
+              'R' as u8,
+              'I' as u8,
+              'F' as u8,
+              'F' as u8,
+              (fsize & 0xFF) as u8,
+              (fsize >> 8) as u8,
+              (fsize >> 16) as u8,
+              (fsize >> 24) as u8,
+              'W' as u8,
+              'A' as u8,
+              'V' as u8,
+              'E' as u8,
+              'f' as u8,
+              'm' as u8,
+              't' as u8,
+              ' ' as u8,
+              16,
+              0,
+              0,
+              0,
+              1,
+              0,
+              2,
+              0,
+              (rate & 0xFF) as u8,
+              (rate >> 8) as u8,
+              (rate >> 16) as u8,
+              (rate >> 24) as u8,
+              (mul & 0xFF) as u8,
+              (mul >> 8) as u8,
+              (mul >> 16) as u8,
+              (mul >> 24) as u8,
+              (16 * 2) / 8 as u8,
+              0,
+              16,
+              0,
+              'd' as u8,
+              'a' as u8,
+              't' as u8,
+              'a' as u8,
+              (dsize & 0xFF) as u8,
+              (dsize >> 8) as u8,
+              (dsize >> 16) as u8,
+              (dsize >> 24) as u8,
+            ];
+            data.extend(
+              self
+                .voice_data
+                .iter()
+                .flat_map(|short| [(short & 0xFF) as u8, (short >> 8) as u8]),
+            );
+            println!("playing!");
+            let mut input: Input = data.into();
+            input = input
+              .make_playable_async(&CODEC_REGISTRY, &PROBE)
+              .await
+              .expect("Oh shit");
+            println!("{:?}", input.is_playable());
+            println!("{:?}", handler.play_input(input));
+          }
+          self.voice_data.clear();
+        }
+
         if let Err(err) = self.plugin_env.process_tick_event(&ctx) {
           println!("[{}] {}", "Error".red().bold(), err);
         }

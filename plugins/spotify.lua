@@ -5,7 +5,7 @@ local plugin = bot.plugin("Spotify")
 
 local client = spotify.Client:new(
    "c021ca2ee0c943e1835fdbef8b89b1cd",
-   "--SECRET--"
+   "4851b06f270e46f3962e232da29d7197"
 )
 
 plugin.cache:load()
