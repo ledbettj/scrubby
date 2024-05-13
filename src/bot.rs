@@ -1,15 +1,16 @@
+use crate::event_handler::VoiceEvent;
+use crate::plugins::PluginEnv;
 use colored::Colorize;
 use serenity::all::{Channel, ChannelType, GuildId};
 use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
 use serenity::prelude::*;
+use sonata_synth::SonataSpeechSynthesizer;
 use songbird::input::codecs::{CODEC_REGISTRY, PROBE};
 use songbird::input::Input;
 use songbird::model::id::UserId;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-
-use crate::event_handler::VoiceEvent;
-use crate::plugins::PluginEnv;
+use whisper_rs::{WhisperContext, WhisperContextParameters, WhisperState};
 
 #[derive(Debug)]
 pub enum BotEvent {
@@ -60,7 +61,15 @@ impl Bot {
     mut vrx: mpsc::UnboundedReceiver<VoiceEvent>,
   ) -> () {
     let mut bot = Bot::new();
-    let mut map: HashMap<_, Vec<f32>> = HashMap::new();
+    let mut voice_data: HashMap<_, Vec<f32>> = HashMap::new();
+
+    let wisp_ctx = WhisperContext::new_with_params(
+      "./models/whisper.cpp-model-medium.en/ggml-medium.en.bin",
+      WhisperContextParameters::default(),
+    )
+    .expect("Failed to load model");
+    let mut wisp_state = wisp_ctx.create_state().expect("Failed to create key");
+    let (synth, synth_rate) = super::voice::init_synth();
 
     if let Err(e) = bot.plugin_env.load(false) {
       println!("[{}] {}", "Error".red().bold(), e);
@@ -73,16 +82,23 @@ impl Bot {
           if let BotEvent::ReadyEvent(ref ready, _) = event {
             gid = Some(ready.guilds[0].id);
           }
-          bot.dispatch_event(&event, gid).await;
+          bot.dispatch_event(&event, gid, &mut wisp_state, &synth, synth_rate).await;
         },
         Some(event) = vrx.recv() => {
-          bot.dispatch_voice_event(event, &mut map).await;
+          bot.dispatch_voice_event(event, &mut voice_data).await;
         }
       }
     }
   }
 
-  async fn dispatch_event(&mut self, event: &BotEvent, gid: Option<GuildId>) -> () {
+  async fn dispatch_event(
+    &mut self,
+    event: &BotEvent,
+    gid: Option<GuildId>,
+    mut whisper_state: &mut WhisperState<'_>,
+    synth: &SonataSpeechSynthesizer,
+    synth_rate: usize,
+  ) -> () {
     match event {
       BotEvent::MessageEvent(msg, ctx) => {
         if !Self::message_is_respondable(&msg, &ctx).await {
@@ -127,10 +143,11 @@ impl Bot {
       BotEvent::TickEvent(ctx) => {
         if !self.voice_data.is_empty() {
           let mgr = songbird::get(ctx).await.expect("Voice client");
-          println!("play time");
           if let Some(handler_lock) = mgr.get(gid.unwrap()) {
-            let text = super::voice::recognize(&self.voice_data);
-            let output = super::voice::generate(&text);
+            println!("recognizing...");
+            let text = super::voice::recognize(&mut whisper_state, &self.voice_data);
+            println!("generating...");
+            let output = super::voice::generate(synth, synth_rate, &text);
             let mut handler = handler_lock.lock().await;
             println!("playing!");
             let mut input: Input = output.into();

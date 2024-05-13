@@ -1,6 +1,6 @@
 use sonata_piper::PiperSynthesisConfig;
 use sonata_synth::{SonataModel, SonataSpeechSynthesizer};
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use whisper_rs::{FullParams, SamplingStrategy, WhisperState};
 
 pub fn convert_pcm(
   input: &[i16],
@@ -18,16 +18,9 @@ pub fn convert_pcm(
     .collect()
 }
 
-pub fn recognize(raw_data: &[f32]) -> String {
-  let ctx = WhisperContext::new_with_params(
-    "./models/whisper.cpp-model-medium.en/ggml-medium.en.bin",
-    WhisperContextParameters::default(),
-  )
-  .expect("Failed to load model");
-
-  let mut state = ctx.create_state().expect("Failed to create key");
+pub fn recognize(wisp_state: &mut WhisperState, raw_data: &[f32]) -> String {
   let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 0 });
-  params.set_n_threads(8);
+  params.set_n_threads(16);
   // Enable translation.
   params.set_translate(true);
   // Set the language to translate to to English.
@@ -39,20 +32,20 @@ pub fn recognize(raw_data: &[f32]) -> String {
   params.set_print_timestamps(false);
 
   // std::fs::write("/home/john/out32.wav", &raw_to_wav32(&raw_data));
-  state
+  wisp_state
     .full(params, &raw_data[..])
     .expect("Failed to run model");
 
-  let segment_count = state.full_n_segments().unwrap();
+  let segment_count = wisp_state.full_n_segments().unwrap();
 
   let transcript = (0..segment_count)
-    .map(|index| state.full_get_segment_text(index).unwrap())
+    .map(|index| wisp_state.full_get_segment_text(index).unwrap())
     .collect::<String>();
 
   transcript
 }
 
-pub fn generate(input: &str) -> Vec<u8> {
+pub fn init_synth() -> (SonataSpeechSynthesizer, usize) {
   let path = std::path::Path::new("./models/piper/ryan/high/en_US-ryan-high.onnx.json");
   let json: serde_json::Value =
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
@@ -72,10 +65,14 @@ pub fn generate(input: &str) -> Vec<u8> {
   cfg.speaker = None;
 
   synth.set_fallback_synthesis_config(&cfg).unwrap();
+  (synth, sample_rate as usize)
+}
+
+pub fn generate(synth: &SonataSpeechSynthesizer, sample_rate: usize, input: &str) -> Vec<u8> {
   let stream = synth.synthesize_lazy(input.to_string(), None).unwrap();
 
-  let mut data: Vec<u8> = Vec::with_capacity(22_050 * 30);
-  let mut wav = wav_header(sample_rate as usize, 1, 2);
+  let mut data: Vec<u8> = Vec::with_capacity(sample_rate * 30);
+  let mut wav = wav_header(sample_rate, 1, 2);
 
   for result in stream {
     let audio = result.unwrap();
