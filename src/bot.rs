@@ -7,10 +7,7 @@ use serenity::prelude::*;
 use sonata_synth::SonataSpeechSynthesizer;
 use songbird::input::codecs::{CODEC_REGISTRY, PROBE};
 use songbird::input::Input;
-use songbird::model::id::UserId;
-use std::collections::HashMap;
 use tokio::sync::mpsc;
-use whisper_rs::{WhisperContext, WhisperContextParameters, WhisperState};
 
 #[derive(Debug)]
 pub enum BotEvent {
@@ -20,55 +17,28 @@ pub enum BotEvent {
 }
 
 pub struct Bot {
-  voice_data: Vec<f32>,
+  captured_text: Vec<String>,
   plugin_env: PluginEnv,
 }
 
 impl Bot {
   fn new() -> Self {
     Self {
-      voice_data: vec![],
+      captured_text: vec![],
       plugin_env: PluginEnv::new("./plugins"),
-    }
-  }
-
-  pub async fn dispatch_voice_event(
-    &mut self,
-    event: VoiceEvent,
-    storage: &mut HashMap<UserId, Vec<f32>>,
-  ) -> () {
-    match event {
-      VoiceEvent::Data(uid, data) => {
-        println!("{:?} speaking {:?}", uid, data.len());
-
-        storage
-          .entry(uid)
-          .and_modify(|samples| samples.extend(&data))
-          .or_insert_with(|| data.into());
-      }
-      VoiceEvent::Silent => {
-        self.voice_data.clear();
-        storage
-          .iter()
-          .for_each(|(_id, data)| self.voice_data.extend(data));
-        storage.clear();
-      }
     }
   }
 
   pub async fn start(
     mut rx: mpsc::UnboundedReceiver<BotEvent>,
-    mut vrx: mpsc::UnboundedReceiver<VoiceEvent>,
+    vrx: mpsc::UnboundedReceiver<VoiceEvent>,
   ) -> () {
     let mut bot = Bot::new();
-    let mut voice_data: HashMap<_, Vec<f32>> = HashMap::new();
 
-    let wisp_ctx = WhisperContext::new_with_params(
-      "./models/whisper.cpp-model-medium.en/ggml-medium.en.bin",
-      WhisperContextParameters::default(),
-    )
-    .expect("Failed to load model");
-    let mut wisp_state = wisp_ctx.create_state().expect("Failed to create key");
+    let (tx, mut text_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    tokio::spawn(super::voice::recognizer(vrx, tx));
+
     let (synth, synth_rate) = super::voice::init_synth();
 
     if let Err(e) = bot.plugin_env.load(false) {
@@ -82,10 +52,11 @@ impl Bot {
           if let BotEvent::ReadyEvent(ref ready, _) = event {
             gid = Some(ready.guilds[0].id);
           }
-          bot.dispatch_event(&event, gid, &mut wisp_state, &synth, synth_rate).await;
+          bot.dispatch_event(&event, gid, &synth, synth_rate).await;
         },
-        Some(event) = vrx.recv() => {
-          bot.dispatch_voice_event(event, &mut voice_data).await;
+        Some(text) = text_rx.recv() => {
+          println!("{:?}", text);
+          bot.captured_text.push(text);
         }
       }
     }
@@ -95,7 +66,6 @@ impl Bot {
     &mut self,
     event: &BotEvent,
     gid: Option<GuildId>,
-    mut whisper_state: &mut WhisperState<'_>,
     synth: &SonataSpeechSynthesizer,
     synth_rate: usize,
   ) -> () {
@@ -141,12 +111,12 @@ impl Bot {
         }
       }
       BotEvent::TickEvent(ctx) => {
-        if !self.voice_data.is_empty() {
+        if !self.captured_text.is_empty() {
           let mgr = songbird::get(ctx).await.expect("Voice client");
           if let Some(handler_lock) = mgr.get(gid.unwrap()) {
-            println!("recognizing...");
-            let text = super::voice::recognize(&mut whisper_state, &self.voice_data);
-            println!("generating...");
+            let text = self.captured_text.iter().cloned().collect::<String>();
+            self.captured_text.clear();
+            println!("generating: \"{}\"", text);
             let output = super::voice::generate(synth, synth_rate, &text);
             let mut handler = handler_lock.lock().await;
             println!("playing!");
@@ -157,7 +127,6 @@ impl Bot {
               .expect("Oh shit");
             handler.play_input(input);
           }
-          self.voice_data.clear();
         }
 
         if let Err(err) = self.plugin_env.process_tick_event(&ctx) {

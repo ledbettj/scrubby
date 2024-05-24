@@ -1,6 +1,11 @@
 use sonata_piper::PiperSynthesisConfig;
 use sonata_synth::{SonataModel, SonataSpeechSynthesizer};
-use whisper_rs::{FullParams, SamplingStrategy, WhisperState};
+use whisper_rs::{FullParams, SamplingStrategy};
+use whisper_rs::{WhisperContext, WhisperContextParameters, WhisperState};
+
+use tokio::sync::mpsc;
+
+use super::event_handler::VoiceEvent;
 
 pub fn convert_pcm(
   input: &[i16],
@@ -18,31 +23,83 @@ pub fn convert_pcm(
     .collect()
 }
 
-pub fn recognize(wisp_state: &mut WhisperState, raw_data: &[f32]) -> String {
-  let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 0 });
-  params.set_n_threads(16);
-  // Enable translation.
-  params.set_translate(true);
-  // Set the language to translate to to English.
-  params.set_language(Some("en"));
-  // Disable anything that prints to stdout.
-  params.set_print_special(false);
-  params.set_print_progress(false);
-  params.set_print_realtime(false);
-  params.set_print_timestamps(false);
+pub async fn recognizer(
+  mut vrx: mpsc::UnboundedReceiver<VoiceEvent>,
+  tx: mpsc::UnboundedSender<String>,
+) {
+  let mut buffer = vec![];
+  let mut tokens = vec![];
 
-  // std::fs::write("/home/john/out32.wav", &raw_to_wav32(&raw_data));
-  wisp_state
-    .full(params, &raw_data[..])
-    .expect("Failed to run model");
+  let wisp_ctx = WhisperContext::new_with_params(
+    "./models/whisper.cpp-model-medium.en/ggml-medium.en.bin",
+    WhisperContextParameters::default(),
+  )
+  .expect("Failed to load model");
 
-  let segment_count = wisp_state.full_n_segments().unwrap();
+  let mut state = wisp_ctx.create_state().expect("Failed to create key");
+  let mut last_buffer_len = 0;
 
-  let transcript = (0..segment_count)
-    .map(|index| wisp_state.full_get_segment_text(index).unwrap())
-    .collect::<String>();
+  while let Some(event) = vrx.recv().await {
+    let (should_process, should_clear) = match event {
+      VoiceEvent::Data(_uid, data) => {
+        //println!("{:?} speaking {:?}", uid, data.len());
 
-  transcript
+        buffer.extend(&data);
+        (buffer.len() >= 16_000 + last_buffer_len, false)
+      }
+      VoiceEvent::Silent => (!buffer.is_empty(), true),
+    };
+
+    if should_process {
+      println!("recognizing... {} / {}", buffer.len(), should_clear);
+      last_buffer_len = buffer.len();
+
+      let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 0 });
+      params.set_n_threads(16);
+      // Enable translation.
+      params.set_translate(true);
+      // Set the language to translate to to English.
+      params.set_language(Some("en"));
+      // Disable anything that prints to stdout.
+      params.set_print_special(false);
+      params.set_print_progress(false);
+      params.set_print_realtime(false);
+      params.set_print_timestamps(false);
+      params.set_suppress_blank(true);
+      params.set_suppress_non_speech_tokens(true);
+      params.set_duration_ms(1_000);
+      params.set_no_context(true);
+      params.set_tokens(&tokens);
+
+      state
+        .full(params, &buffer[..])
+        .expect("Failed to run model");
+
+      let token_count = state.full_n_tokens(0).unwrap();
+      let text = (1..token_count - 1)
+        .map(|i| {
+          tokens.push(state.full_get_token_data(0, i).unwrap().id);
+          state.full_get_token_text(0, i).unwrap()
+        })
+        .collect::<String>();
+
+      let token_start_time = state.full_get_segment_t0(0).unwrap();
+      let token_end_time = state.full_get_segment_t1(0).unwrap();
+      println!(
+        "segment: {} - {} = {}",
+        token_end_time,
+        token_start_time,
+        token_end_time - token_start_time
+      );
+      tx.send(text).expect("Failed to tx");
+    };
+
+    if should_clear {
+      buffer.clear();
+      tokens.clear();
+      last_buffer_len = 0;
+    }
+  }
 }
 
 pub fn init_synth() -> (SonataSpeechSynthesizer, usize) {

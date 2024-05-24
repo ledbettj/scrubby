@@ -21,7 +21,7 @@ use songbird::{
 use tokio::sync::mpsc;
 
 pub enum VoiceEvent {
-  Data(UserId, Vec<f32>),
+  Data(Option<UserId>, Vec<f32>),
   Silent,
 }
 
@@ -173,12 +173,15 @@ impl VoiceEventHandler for VoiceHandler {
         } else if speaking != 0 {
           self.inner.last_tick_empty.store(false, Ordering::SeqCst);
 
-          println!("Voice tick ({speaking}/{total_participants} live):");
+          //println!("Voice tick ({speaking}/{total_participants} live):");
 
           // You can also examine tick.silent to see users who are present
           // but haven't spoken in this tick.
           for (ssrc, data) in &tick.speaking {
-            let user_id = self.inner.known_ssrcs.get(&ssrc).unwrap().clone();
+            let user_id = match self.inner.known_ssrcs.get(&ssrc) {
+              Some(v) => Some(v.clone()),
+              None => None,
+            };
 
             // This field should *always* exist under DecodeMode::Decode.
             // The `else` allows you to see how the other modes are affected.
