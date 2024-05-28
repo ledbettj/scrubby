@@ -2,3 +2,4 @@
 .discord-token
 /cache/*
 !/cache/.gitkeep
+.env

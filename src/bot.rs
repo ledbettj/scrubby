@@ -26,6 +26,7 @@ impl Bot {
 
   pub async fn start(mut rx: mpsc::UnboundedReceiver<BotEvent>) -> () {
     let mut bot = Bot::new();
+
     if let Err(e) = bot.plugin_env.load(false) {
       println!("[{}] {}", "Error".red().bold(), e);
     }

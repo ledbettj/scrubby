@@ -1,4 +1,6 @@
+use dotenv;
 use serenity::prelude::*;
+use std::env;
 use tokio::sync::mpsc;
 
 mod bot;
@@ -9,7 +11,8 @@ use bot::Bot;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-  let token = std::env::var("DISCORD_TOKEN").expect("DISCORD_TOKEN is not set");
+  dotenv::dotenv().expect("Failed to load .env file");
+  let token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKEN is not set");
   let intents = GatewayIntents::GUILD_MESSAGES
     | GatewayIntents::DIRECT_MESSAGES
     | GatewayIntents::GUILDS

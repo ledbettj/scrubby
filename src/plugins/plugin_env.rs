@@ -1,4 +1,6 @@
 use colored::*;
+use std::collections::HashMap;
+use std::env;
 use std::fs::File;
 use std::io::Read;
 
@@ -32,6 +34,18 @@ impl PluginEnv {
     if let Err(e) = self.lua.load("math.randomseed(os.time())").exec() {
       println!("[{}] Failed to seed RNG: {}", "Error".red().bold(), e);
     }
+
+    let env_tbl = self.lua.create_table()?;
+    let expose = env::var("LUA_EXPOSE_ENV").unwrap_or_default();
+    expose
+      .split(",")
+      .map(|key| (key, env::var(key).ok()))
+      .try_for_each(|(key, value)| {
+        println!("[{}] exposing env.{}", "Bot".yellow().bold(), key);
+        env_tbl.set(key.to_owned(), value.clone())
+      })?;
+
+    self.lua.globals().set("env", env_tbl)?;
 
     if !reload {
       self.init_module_loader()?;

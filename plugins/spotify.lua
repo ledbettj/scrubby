@@ -3,10 +3,7 @@ local spotify = require("spotify")
 
 local plugin = bot.plugin("Spotify")
 
-local client = spotify.Client:new(
-   "c021ca2ee0c943e1835fdbef8b89b1cd",
-   "--SECRET--"
-)
+local client = spotify.Client:new("c021ca2ee0c943e1835fdbef8b89b1cd", env.SPOTIFY_SECRET)
 
 plugin.cache:load()
 
