@@ -1,5 +1,4 @@
 use colored::*;
-use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::Read;

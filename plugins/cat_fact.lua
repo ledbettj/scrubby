@@ -5,7 +5,7 @@ local json = require("json")
 local plugin = bot.plugin("Cat Facts")
 
 plugin:command(".*cat fact", function(self, msg, _)
-  local fact = json.decode(http.get("https://catfact.ninja/fact"))
+  local fact = json.decode(http.get("https://catfact.ninja/fact").body)
   return fact["fact"]
 end)
 

@@ -32,7 +32,7 @@ function Client:auth(code)
             ["Authorization"] = "Basic " .. b64.encode(self.client_id .. ":" .. self.client_secret)
          }
    })
-   local data = json.decode(resp)
+   local data = json.decode(resp.body)
 
    self.refresh_token = data.refresh_token
    self.access_token = data.access_token
@@ -49,7 +49,7 @@ function Client:auth_refresh()
             ["Authorization"] = "Basic " .. b64.encode(self.client_id .. ":" .. self.client_secret)
          }
    })
-   local data = json.decode(resp)
+   local data = json.decode(resp.body)
 
    self.access_token = data.access_token
    self.expires_at = os.time() + data.expires_in
@@ -60,7 +60,7 @@ function Client:search(query)
       API_URL .. "/search?type=track&limit=1&q=" .. url_encode(query),
       { headers = { ['Authorization'] = "Bearer " .. self.access_token } }
    )
-   local data = json.decode(resp)
+   local data = json.decode(resp.body)
 
    return data.tracks.items[1]
 end
@@ -78,7 +78,7 @@ function Client:list_queue()
       API_URL .. "/me/player/queue",
       { headers = { ['Authorization'] = "Bearer " .. self.access_token } }
    )
-   return json.decode(resp)
+   return json.decode(resp.body)
 end
 
 return { Client = Client }

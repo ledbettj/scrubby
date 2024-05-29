@@ -41,7 +41,15 @@ function plugin:fallback(msg)
             ["Anthropic-Version"] = "2023-06-01"
          }
    })
-   local body = json.decode(resp)
+   local body = json.decode(resp.body)
+
+   if body.type == "error" then
+      -- remove the prompt that caused the error
+      table.remove(history[msg.author])
+      self:log("history", json.encode(history[msg.author]))
+      return "Uh oh:\n```\n" .. body.error.message .. "\n```"
+   end
+
    table.insert(history[msg.author], { ["role"] = body.role, ["content"] = body.content[1].text })
 
    if #history[msg.author] >= 6 then
