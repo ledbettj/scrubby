@@ -1,6 +1,6 @@
 local bot = require("bot")
 
-local plugin = bot.plugin("Idler")
+local plugin = bot.plugin("Idler", "Scrubby is busy playing games.")
 
 local last = 0
 local games = {

@@ -4,13 +4,15 @@ use mlua::{ExternalError, Function as LuaFunction, Lua, Table, Value as LuaValue
 
 pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
   let tbl = lua.create_table()?;
-  let plugin = lua.create_function(|l: &Lua, name: String| {
+  let plugin = lua.create_function(|l: &Lua, (name, desc): (String, Option<String>)| {
     let tbl = l.create_table()?;
 
     let command = l.create_function(
-      |_: &Lua, (plg, cmd, callback): (Table, String, LuaFunction)| {
+      |_: &Lua, (plg, cmd, desc, callback): (Table, String, String, LuaFunction)| {
         let cmds: Table = plg.get("commands")?;
-        cmds.set(cmd, callback)?;
+        cmds.set(cmd.clone(), callback)?;
+        let help: Table = plg.get("help")?;
+        help.set(cmd, desc)?;
         Ok(())
       },
     )?;
@@ -78,7 +80,9 @@ pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
 
     tbl.set("cache", cache)?;
     tbl.set("name", name)?;
+    tbl.set("description", desc)?;
     tbl.set("commands", l.create_table()?)?;
+    tbl.set("help", l.create_table()?)?;
     tbl.set("command", command)?;
     tbl.set("log", log)?;
 

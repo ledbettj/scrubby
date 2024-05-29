@@ -27,12 +27,13 @@ function Client:auth(code)
       ACCOUNTS_URL .. "/token",
       "grant_type=authorization_code&code=" .. code .. "&redirect_uri=https://weirdhorse.party/callback",
       {
+         json = true,
          headers = {
             ["Content-Type"] = "application/x-www-form-urlencoded",
             ["Authorization"] = "Basic " .. b64.encode(self.client_id .. ":" .. self.client_secret)
          }
    })
-   local data = json.decode(resp.body)
+   local data = resp.json
 
    self.refresh_token = data.refresh_token
    self.access_token = data.access_token
@@ -44,12 +45,13 @@ function Client:auth_refresh()
       ACCOUNTS_URL .. "/token",
       "grant_type=refresh_token&refresh_token=" .. self.refresh_token,
       {
+         json = true,
          headers = {
             ["Content-Type"] = "application/x-www-form-urlencoded",
             ["Authorization"] = "Basic " .. b64.encode(self.client_id .. ":" .. self.client_secret)
          }
    })
-   local data = json.decode(resp.body)
+   local data = resp.json
 
    self.access_token = data.access_token
    self.expires_at = os.time() + data.expires_in
@@ -58,9 +60,12 @@ end
 function Client:search(query)
    local resp = http.get(
       API_URL .. "/search?type=track&limit=1&q=" .. url_encode(query),
-      { headers = { ['Authorization'] = "Bearer " .. self.access_token } }
+      {
+         json = true,
+         headers = { ['Authorization'] = "Bearer " .. self.access_token }
+      }
    )
-   local data = json.decode(resp.body)
+   local data = resp.json
 
    return data.tracks.items[1]
 end
@@ -76,9 +81,12 @@ end
 function Client:list_queue()
    local resp = http.get(
       API_URL .. "/me/player/queue",
-      { headers = { ['Authorization'] = "Bearer " .. self.access_token } }
+      {
+         json = true,
+         headers = { ['Authorization'] = "Bearer " .. self.access_token }
+      }
    )
-   return json.decode(resp.body)
+   return resp.json
 end
 
 return { Client = Client }

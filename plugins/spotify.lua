@@ -1,7 +1,7 @@
 local bot = require("bot")
 local spotify = require("spotify")
 
-local plugin = bot.plugin("Spotify")
+local plugin = bot.plugin("Spotify", "allows controlling a local Spotify instance.")
 
 local client = spotify.Client:new("c021ca2ee0c943e1835fdbef8b89b1cd", env.SPOTIFY_SECRET)
 
@@ -40,7 +40,8 @@ function plugin:tick(ctx)
 end
 
 plugin:command(
-   ".*queue up\\s+(.*)",
+   "queue up\\s+(.*)",
+   "adds a song to the 'up next' queue.",
    function(self, msg, matches)
       local query = matches[2]
       self:log("Searching for ", query)
@@ -63,6 +64,7 @@ end)
 
 plugin:command(
    "what('?)s up next",
+   "tells you what song is coming next.",
    function(self, msg, matches)
       local r = client:list_queue()
       local q = r.queue[1]

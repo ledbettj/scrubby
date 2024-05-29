@@ -1,5 +1,5 @@
 local bot = require("bot")
-local plugin = bot.plugin("LLM")
+local plugin = bot.plugin("LLM", "responds with generative AI from Claude.")
 local http = require('http')
 local json = require('json')
 
@@ -13,15 +13,15 @@ Don't be afraid to be rude or sarcastic if necessary -- that's part of your char
 
 local history = {}
 
-plugin:command("\\bforget\\b", function(self, msg, matches)
+plugin:command("forget\\s+my\\s+history", "clears your chat history with the AI.", function(self, msg, matches)
   history[msg.author] = nil
   return "OK"
 end)
 
 function plugin:fallback(msg)
    message = {
-      ["role"] = "user",
-      ["content"] = msg.content
+      role = "user",
+      content = msg.content
    }
    history[msg.author] = history[msg.author] or {}
    table.insert(history[msg.author], message)
@@ -29,19 +29,20 @@ function plugin:fallback(msg)
    local resp = http.post(
       CLAUDE_URL,
       json.encode({
-            ["model"] = "claude-3-haiku-20240307",
-            ["max_tokens"] = 1024,
-            ["system"] = CLAUDE_PROMPT,
-            ["messages"] = history[msg.author]
+            model = "claude-3-haiku-20240307",
+            max_tokens = 1024,
+            system = CLAUDE_PROMPT,
+            messages = history[msg.author]
       }),
       {
+         json = true,
          headers = {
             ["Content-Type"] = "application/json",
             ["X-API-Key"] = CLAUDE_KEY,
             ["Anthropic-Version"] = "2023-06-01"
          }
    })
-   local body = json.decode(resp.body)
+   local body = resp.json
 
    if body.type == "error" then
       -- remove the prompt that caused the error
@@ -50,7 +51,7 @@ function plugin:fallback(msg)
       return "Uh oh:\n```\n" .. body.error.message .. "\n```"
    end
 
-   table.insert(history[msg.author], { ["role"] = body.role, ["content"] = body.content[1].text })
+   table.insert(history[msg.author], { role = body.role, content = body.content[1].text })
 
    if #history[msg.author] >= 6 then
       -- have to remove two items (user/assistant)
