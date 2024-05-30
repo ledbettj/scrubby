@@ -1,21 +1,18 @@
 use colored::*;
 use mlua::serde::LuaSerdeExt;
-use mlua::{ExternalError, Function as LuaFunction, Lua, Table, Value as LuaValue, Variadic};
+use mlua::{ExternalError, Lua, Table, Value as LuaValue, Variadic};
 
 pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
   let tbl = lua.create_table()?;
   let plugin = lua.create_function(|l: &Lua, (name, desc): (String, Option<String>)| {
     let tbl = l.create_table()?;
 
-    let command = l.create_function(
-      |_: &Lua, (plg, cmd, desc, callback): (Table, String, String, LuaFunction)| {
-        let cmds: Table = plg.get("commands")?;
-        cmds.set(cmd.clone(), callback)?;
-        let help: Table = plg.get("help")?;
-        help.set(cmd, desc)?;
-        Ok(())
-      },
-    )?;
+    let command = l.create_function(|_: &Lua, (plg, cmd): (Table, Table)| {
+      let cmds: Table = plg.get("commands")?;
+      let name: String = cmd.get("name")?;
+      cmds.set(name, cmd)?;
+      Ok(())
+    })?;
 
     let cache = l.create_table()?;
     cache.set("_ref", &tbl)?;
@@ -82,7 +79,6 @@ pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
     tbl.set("name", name)?;
     tbl.set("description", desc)?;
     tbl.set("commands", l.create_table()?)?;
-    tbl.set("help", l.create_table()?)?;
     tbl.set("command", command)?;
     tbl.set("log", log)?;
 

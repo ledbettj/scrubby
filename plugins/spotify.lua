@@ -1,7 +1,8 @@
 local bot = require("bot")
 local spotify = require("spotify")
+local json = require("json")
 
-local plugin = bot.plugin("Spotify", "allows controlling a local Spotify instance.")
+local plugin = bot.plugin("Spotify")
 
 local client = spotify.Client:new("c021ca2ee0c943e1835fdbef8b89b1cd", env.SPOTIFY_SECRET)
 
@@ -39,52 +40,55 @@ function plugin:tick(ctx)
    end
 end
 
-plugin:command(
-   "queue up\\s+(.*)",
-   "adds a song to the 'up next' queue.",
-   function(self, msg, matches)
-      local query = matches[2]
-      self:log("Searching for ", query)
+plugin:command({
+      name = "enqueue",
+      description = "Add a song to the list of songs to be played. Returns information about the song that was added, including the album cover image.",
+      schema = {
+         ["type"] = "object",
+         properties = {
+            query = {
+               ["type"] = "string",
+               description = "the title of a song or song and artist",
+            },
+         },
+         required = { "query" }
+      },
+      method = function(self, params)
+         local query = params.query
+         self:log("Searching for ", query)
 
-      local r = client:search(query)
-      client:enqueue(r.uri)
+         local r = client:search(query)
+         client:enqueue(r.uri)
 
-      return {
-         content = "Queued up!",
-         embed = {
-            title = r.name,
-            thumbnail = r.album.images[1].url,
-            fields = {
-               { "Artist", r.artists[1].name, true },
-               { "Album", r.album.name, true }
-            }
-         }
-      }
-end)
+         return json.encode({
+               title = r.name,
+               thumbnail = r.album.images[1].url,
+               ["Artist"] = r.artists[1].name,
+               ["Album"] = r.album.name
+         })
+      end
+})
 
-plugin:command(
-   "what('?)s up next",
-   "tells you what song is coming next.",
-   function(self, msg, matches)
-      local r = client:list_queue()
-      local q = r.queue[1]
+plugin:command({
+      name = "up_next",
+      description = "Tells you what song is coming up next in the list of songs to play. Returns information about the song that was added, including the album cover image.",
+      schema = nil,
+      method = function(self, params)
+         local r = client:list_queue()
+         local q = r.queue[1]
 
-      if q ~= nil then
-         return {
-            content = "Next Track:",
-            embed = {
+         if q ~= nil then
+            return json.encode({
                title = q.name,
                thumbnail = q.album.images[1].url,
-               fields = {
-                  { "Artist", q.artists[1].name, true },
-                  { "Album", q.album.name, true }
-               }
-            }
-         }
-      else
-         return "Nothing queued up! Tell me 'queue up ...' to add a song to the queue."
+               ["Artist"] = q.artists[1].name,
+               ["Album"] = q.album.name,
+            })
+         else
+            return "There is nothing in the queue to play"
+         end
       end
-end)
+})
 
 
 bot:register(plugin)

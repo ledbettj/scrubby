@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+
 use colored::Colorize;
 use serenity::all::{Channel, ChannelType};
 use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
 use serenity::prelude::*;
 use tokio::sync::mpsc;
+
+use super::llm::LLM;
 
 use crate::plugins::PluginEnv;
 
@@ -15,12 +19,17 @@ pub enum BotEvent {
 
 pub struct Bot {
   plugin_env: PluginEnv,
+  llm: LLM,
 }
 
 impl Bot {
   fn new() -> Self {
     Self {
       plugin_env: PluginEnv::new("./plugins"),
+      llm: LLM::new(
+        std::env::var("CLAUDE_KEY").expect("No CLAUDE_KEY provided"),
+        vec![],
+      ),
     }
   }
 
@@ -30,6 +39,9 @@ impl Bot {
     if let Err(e) = bot.plugin_env.load(false) {
       println!("[{}] {}", "Error".red().bold(), e);
     }
+
+    let tools = bot.plugin_env.tools().expect("OH SHIT");
+    bot.llm.update_tools(tools);
 
     while let Some(event) = rx.recv().await {
       bot.dispatch_event(&event).await;
@@ -45,33 +57,53 @@ impl Bot {
 
         if msg.content.contains("reload") {
           Self::process_reload_request(&msg, &ctx, &mut self.plugin_env).await;
+          if let Ok(tools) = self.plugin_env.tools() {
+            self.llm.update_tools(tools);
+          }
           return;
         }
 
-        if let Ok(replies) = self.plugin_env.dispatch_message(&msg, &ctx) {
-          for r in replies {
-            match r {
-              (Some(s), None) => {
-                msg
-                  .reply(&ctx.http(), s)
-                  .await
-                  .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
-                  .ok();
-              }
-              (None, Some(m)) => {
-                msg
-                  .channel_id
-                  .send_message(ctx.http(), m)
-                  .await
-                  .map_err(|err| {
-                    println!("[{}] Failed to send message: {}", "Error".red().bold(), err)
-                  })
-                  .ok();
-              }
-              _ => {}
-            }
+        let res = self.llm.respond(
+          &msg.author.name,
+          &msg.content,
+          |name: &str, input: HashMap<String, String>| self.plugin_env.invoke_tool(name, input),
+        );
+
+        match res {
+          Ok(s) => msg.reply(&ctx.http(), s).await,
+          Err(e) => {
+            msg
+              .reply(&ctx.http(), format!("Error:\n```\n{}\n```", e))
+              .await
           }
         }
+        .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
+        .ok();
+
+        // if let Ok(replies) = self.plugin_env.dispatch_message(&msg, &ctx) {
+        //   for r in replies {
+        //     match r {
+        //       (Some(s), None) => {
+        //         msg
+        //           .reply(&ctx.http(), s)
+        //           .await
+        //           .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
+        //           .ok();
+        //       }
+        //       (None, Some(m)) => {
+        //         msg
+        //           .channel_id
+        //           .send_message(ctx.http(), m)
+        //           .await
+        //           .map_err(|err| {
+        //             println!("[{}] Failed to send message: {}", "Error".red().bold(), err)
+        //           })
+        //           .ok();
+        //       }
+        //       _ => {}
+        //     }
+        //   }
+        // }
       }
       BotEvent::ReadyEvent(ready, ctx) => {
         if let Err(err) = self.plugin_env.process_ready_event(&ready, &ctx) {
