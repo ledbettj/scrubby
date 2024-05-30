@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::Read;
 
 use mlua::serde::LuaSerdeExt;
-use mlua::{IntoLua, Lua, Table};
+use mlua::{ExternalError, IntoLua, Lua, Table};
 use serenity::{
   builder::{CreateEmbed, CreateEmbedFooter, CreateMessage},
   model::gateway::Ready,
@@ -152,6 +152,13 @@ impl PluginEnv {
     searchers.push(search_fn)?;
 
     Ok(())
+  }
+
+  pub fn build_message_json(&self, json: serde_json::Value) -> anyhow::Result<CreateMessage> {
+    match self.lua.to_value(&json)? {
+      mlua::Value::Table(tbl) => self.build_message(&tbl),
+      _ => Err(anyhow::format_err!("oops")),
+    }
   }
 
   fn build_message(&self, table: &Table) -> anyhow::Result<CreateMessage> {

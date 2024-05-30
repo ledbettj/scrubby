@@ -49,6 +49,7 @@ impl Bot {
   }
 
   async fn dispatch_event(&mut self, event: &BotEvent) -> () {
+    let mut replies = vec![];
     match event {
       BotEvent::MessageEvent(msg, ctx) => {
         if !Self::message_is_respondable(&msg, &ctx).await {
@@ -65,45 +66,51 @@ impl Bot {
 
         let res = self.llm.respond(
           &msg.author.name,
-          &msg.content,
+          &msg.content_safe(&ctx).replace("@Scrubby#2153", "Scrubby"),
           |name: &str, input: HashMap<String, String>| self.plugin_env.invoke_tool(name, input),
         );
+        self.llm.trim();
 
         match res {
-          Ok(s) => msg.reply(&ctx.http(), s).await,
+          Ok(s) => {
+            let resp = if let Ok(json) = serde_json::from_str(&s) {
+              if let Ok(builder) = self.plugin_env.build_message_json(json) {
+                (None, Some(builder))
+              } else {
+                (Some(s), None)
+              }
+            } else {
+              (Some(s), None)
+            };
+            replies.push(resp);
+          }
           Err(e) => {
-            msg
-              .reply(&ctx.http(), format!("Error:\n```\n{}\n```", e))
-              .await
+            replies.push((Some(format!("Error:\n```\n{}\n```", e).to_owned()), None));
+          }
+        };
+
+        for r in replies.drain(..) {
+          match r {
+            (Some(s), None) => {
+              msg
+                .reply(&ctx.http(), s)
+                .await
+                .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
+                .ok();
+            }
+            (None, Some(m)) => {
+              msg
+                .channel_id
+                .send_message(ctx.http(), m)
+                .await
+                .map_err(|err| {
+                  println!("[{}] Failed to send message: {}", "Error".red().bold(), err)
+                })
+                .ok();
+            }
+            _ => {}
           }
         }
-        .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
-        .ok();
-
-        // if let Ok(replies) = self.plugin_env.dispatch_message(&msg, &ctx) {
-        //   for r in replies {
-        //     match r {
-        //       (Some(s), None) => {
-        //         msg
-        //           .reply(&ctx.http(), s)
-        //           .await
-        //           .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
-        //           .ok();
-        //       }
-        //       (None, Some(m)) => {
-        //         msg
-        //           .channel_id
-        //           .send_message(ctx.http(), m)
-        //           .await
-        //           .map_err(|err| {
-        //             println!("[{}] Failed to send message: {}", "Error".red().bold(), err)
-        //           })
-        //           .ok();
-        //       }
-        //       _ => {}
-        //     }
-        //   }
-        // }
       }
       BotEvent::ReadyEvent(ready, ctx) => {
         if let Err(err) = self.plugin_env.process_ready_event(&ready, &ctx) {

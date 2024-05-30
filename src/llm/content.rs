@@ -27,8 +27,5 @@ pub enum Content {
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum ImageSource {
-  Base64 {
-    media_type: String,
-    data: String,
-  },
+  Base64 { media_type: String, data: String },
 }

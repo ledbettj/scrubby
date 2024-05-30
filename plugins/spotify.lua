@@ -42,7 +42,9 @@ end
 
 plugin:command({
       name = "enqueue",
-      description = "Add a song to the list of songs to be played. Returns information about the song that was added, including the album cover image.",
+      description = [[
+  Add a song to the list of songs to be played. Returns information about the song that was added, including the album cover image.
+]],
       schema = {
          ["type"] = "object",
          properties = {
@@ -61,6 +63,7 @@ plugin:command({
          client:enqueue(r.uri)
 
          return json.encode({
+               instructions = "When returning this data to the User, use the JSON format.",
                title = r.name,
                thumbnail = r.album.images[1].url,
                ["Artist"] = r.artists[1].name,
@@ -71,6 +74,9 @@ plugin:command({
 
 plugin:command({
       name = "up_next",
+      description = [[
+  Tells you what song is coming up next in the list of songs to play. Returns information about the song, including the album cover image
+]],
       description = "Tells you what song is coming up next in the list of songs to play. Returns information about the song that was added, including the album cover image.",
       schema = nil,
       method = function(self, params)
@@ -79,6 +85,7 @@ plugin:command({
 
          if q ~= nil then
             return json.encode({
+               instructions = "When returning this data to the User, use the JSON format.",
                title = q.name,
                thumbnail = q.album.images[1].url,
                ["Artist"] = q.artists[1].name,
