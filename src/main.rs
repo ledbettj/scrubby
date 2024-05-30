@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 
 mod bot;
 mod event_handler;
+mod llm;
 mod plugins;
 
 use bot::Bot;
