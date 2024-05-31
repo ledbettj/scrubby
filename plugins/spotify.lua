@@ -48,18 +48,21 @@ plugin:command({
       schema = {
          ["type"] = "object",
          properties = {
-            query = {
+            artist = {
                ["type"] = "string",
-               description = "the title of a song or song and artist",
+               description = "the name of a musical artist",
+            },
+            track = {
+               ["type"] = "string",
+               description = "the title of a song",
             },
          },
-         required = { "query" }
+         required = { "song" }
       },
       method = function(self, params)
-         local query = params.query
-         self:log("Searching for ", query)
+         self:log("Searching for ", json.encode(params))
 
-         local r = client:search(query)
+         local r = client:search(params)
          client:enqueue(r.uri)
 
          return json.encode({
@@ -75,9 +78,8 @@ plugin:command({
 plugin:command({
       name = "up_next",
       description = [[
-  Tells you what song is coming up next in the list of songs to play. Returns information about the song, including the album cover image
-]],
-      description = "Tells you what song is coming up next in the list of songs to play. Returns information about the song that was added, including the album cover image.",
+        Tells you what song is coming up next in the list of songs to play. Returns information about the song, including the album cover image
+      ]],
       schema = nil,
       method = function(self, params)
          local r = client:list_queue()

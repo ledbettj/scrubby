@@ -57,16 +57,24 @@ function Client:auth_refresh()
    self.expires_at = os.time() + data.expires_in
 end
 
-function Client:search(query)
+function Client:search(params)
+   local query = ""
+   for k, v in pairs(params) do
+      query = query .. k .. ":\"" .. v .. "\" "
+   end
+   print("query: " .. query)
    local resp = http.get(
-      API_URL .. "/search?type=track&limit=1&q=" .. url_encode(query),
+      API_URL .. "/search?type=track&limit=1&market=US&q=" .. url_encode(query),
       {
          json = true,
          headers = { ['Authorization'] = "Bearer " .. self.access_token }
       }
    )
    local data = resp.json
-
+   if data.tracks.total == 0 then
+      return "Sorry, couldn't find any matching song"
+   end
+   
    return data.tracks.items[1]
 end
 
