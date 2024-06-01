@@ -1,13 +1,15 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
+use base64::prelude::*;
 use colored::Colorize;
-use serenity::all::{Channel, ChannelType};
+use serenity::all::{Channel, ChannelId, ChannelType};
+use serenity::builder::CreateMessage;
 use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
 use serenity::prelude::*;
 use tokio::sync::mpsc;
 
-use super::llm::LLM;
-
+use super::claude::{Client as Claude, Content, ImageSource, Interaction, Model, Role, Tool};
+use crate::claude::Response;
 use crate::plugins::PluginEnv;
 
 #[derive(Debug)]
@@ -19,29 +21,45 @@ pub enum BotEvent {
 
 pub struct Bot {
   plugin_env: PluginEnv,
-  llm: LLM,
+  claude: Claude,
+  tools: Vec<Tool>,
+  history: HashMap<ChannelId, VecDeque<Interaction>>,
+}
+
+pub enum BotResponse {
+  Text(String),
+  Embedded(CreateMessage),
 }
 
 impl Bot {
-  fn new() -> Self {
+  fn new(plugin_dir: &str, claude_key: &str) -> Self {
     Self {
-      plugin_env: PluginEnv::new("./plugins"),
-      llm: LLM::new(
-        std::env::var("CLAUDE_KEY").expect("No CLAUDE_KEY provided"),
-        vec![],
+      plugin_env: PluginEnv::new(plugin_dir),
+      claude: Claude::new(
+        claude_key,
+        include_str!("./claude/prompt.txt"),
+        Model::Sonnet,
       ),
+      tools: vec![],
+      history: HashMap::new(),
     }
   }
 
-  pub async fn start(mut rx: mpsc::UnboundedReceiver<BotEvent>) -> () {
-    let mut bot = Bot::new();
+  pub async fn start(
+    plugin_dir: &str,
+    claude_key: &str,
+    mut rx: mpsc::UnboundedReceiver<BotEvent>,
+  ) -> () {
+    let mut bot = Bot::new(plugin_dir, claude_key);
 
-    if let Err(e) = bot.plugin_env.load(false) {
-      println!("[{}] {}", "Error".red().bold(), e);
+    match bot.plugin_env.load(false) {
+      Err(e) => {
+        println!("[{}] {}", "Error".red().bold(), e);
+      }
+      Ok(tools) => {
+        bot.tools = tools;
+      }
     }
-
-    let tools = bot.plugin_env.tools().expect("OH SHIT");
-    bot.llm.update_tools(tools);
 
     while let Some(event) = rx.recv().await {
       bot.dispatch_event(&event).await;
@@ -49,7 +67,6 @@ impl Bot {
   }
 
   async fn dispatch_event(&mut self, event: &BotEvent) -> () {
-    let mut replies = vec![];
     match event {
       BotEvent::MessageEvent(msg, ctx) => {
         if !Self::message_is_respondable(&msg, &ctx).await {
@@ -57,55 +74,38 @@ impl Bot {
         }
 
         if msg.content.contains("reload") {
-          Self::process_reload_request(&msg, &ctx, &mut self.plugin_env).await;
-          if let Ok(tools) = self.plugin_env.tools() {
-            self.llm.update_tools(tools);
+          if let Ok(tools) = Self::process_reload_request(&msg, &ctx, &mut self.plugin_env).await {
+            self.tools = tools;
           }
           return;
         }
-
-        let content = LLM::content_for(&msg, &ctx).await;
-        if content.is_empty() {
-          return;
-        }
-        println!("{:?}", content);
-        let res = self.llm.respond(
-          msg,
+        let content = Bot::msg_to_content(&msg, &ctx).await;
+        let mut history = self.history.entry(msg.channel_id).or_default();
+        let replies = match Bot::dispatch_llm(
           content,
-          |name: &str, input: HashMap<String, String>| self.plugin_env.invoke_tool(name, input),
-        );
-        println!("res: {:?}", res);
-
-        self.llm.trim();
-
-        match res {
-          Ok(s) => {
-            let resp = if let Ok(json) = serde_json::from_str(&s) {
-              if let Ok(builder) = self.plugin_env.build_message_json(json) {
-                (None, Some(builder))
-              } else {
-                (Some(s), None)
-              }
-            } else {
-              (Some(s), None)
-            };
-            replies.push(resp);
-          }
-          Err(e) => {
-            replies.push((Some(format!("```\n{}\n```", e).to_owned()), None));
-          }
+          &mut history,
+          &self.claude,
+          &self.tools,
+          &self.plugin_env,
+        ) {
+          Ok(replies) => replies,
+          Err(e) => vec![BotResponse::Text(format!("```\n{}\n```", e).to_owned())],
         };
 
-        for r in replies.drain(..) {
+        while history.len() > 10 {
+          history.drain(..2);
+        }
+
+        for r in replies.into_iter() {
           match r {
-            (Some(s), None) => {
+            BotResponse::Text(s) => {
               msg
                 .reply(&ctx.http(), s)
                 .await
                 .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
                 .ok();
             }
-            (None, Some(m)) => {
+            BotResponse::Embedded(m) => {
               msg
                 .channel_id
                 .send_message(ctx.http(), m)
@@ -115,7 +115,6 @@ impl Bot {
                 })
                 .ok();
             }
-            _ => {}
           }
         }
       }
@@ -167,19 +166,155 @@ impl Bot {
     }
   }
 
-  async fn process_reload_request(msg: &Message, ctx: &Context, plugin_env: &mut PluginEnv) {
+  async fn process_reload_request(
+    msg: &Message,
+    ctx: &Context,
+    plugin_env: &mut PluginEnv,
+  ) -> anyhow::Result<Vec<Tool>> {
     match plugin_env.load(true) {
       Err(e) => {
-        msg.react(&ctx.http(), '❌').await.expect("Failed to react");
+        msg.react(&ctx.http(), '❌').await?;
+        msg.reply(&ctx.http(), format!("```\n{}\n```", e)).await?;
 
-        msg
-          .reply(&ctx.http(), format!("```\n{}\n```", e))
-          .await
-          .expect("Failed to send reply");
+        Err(e)
       }
-      Ok(_) => {
-        msg.react(&ctx.http(), '✅').await.expect("Failed to react");
+      Ok(tools) => {
+        msg.react(&ctx.http(), '✅').await?;
+        Ok(tools)
       }
+    }
+  }
+
+  fn dispatch_llm(
+    content: Vec<Content>,
+    history: &mut VecDeque<Interaction>,
+    claude: &Claude,
+    tools: &[Tool],
+    plugin_env: &PluginEnv,
+  ) -> anyhow::Result<Vec<BotResponse>> {
+    let mut output = vec![];
+
+    if content.is_empty() {
+      return Ok(vec![]);
+    }
+
+    let interaction = Interaction {
+      role: Role::User,
+      content,
     };
+
+    history.push_back(interaction);
+    let mut done = false;
+
+    while !done {
+      done = true;
+      println!(
+        "[{}] Claude Considering: {:?} with {} prior messages",
+        "Debug".white().bold(),
+        history.back().unwrap(), history.len() - 1
+      );
+      let resp = claude.create_message(&history.make_contiguous(), &tools);
+      println!("[{}] Claude Returned: {:?}", "Debug".white().bold(), resp);
+      match resp {
+        Ok(Response::Message { content, .. }) => {
+          history.push_back(Interaction {
+            role: Role::Assistant,
+            content: content.clone(),
+          });
+
+          for content in content.into_iter() {
+            match content {
+              Content::Text { text } => {
+                output.push(text.clone());
+              }
+              Content::ToolUse { id, name, input } => {
+                done = false;
+
+                let tool_content = match plugin_env.invoke_tool(&name, input) {
+                  Err(e) => Content::ToolResult {
+                    tool_use_id: id,
+                    content: e.to_string(),
+                    is_error: true,
+                  },
+                  Ok(None) => Content::ToolResult {
+                    tool_use_id: id,
+                    content: "<no output>".into(),
+                    is_error: false,
+                  },
+                  Ok(Some(s)) => Content::ToolResult {
+                    tool_use_id: id,
+                    content: s.into(),
+                    is_error: false,
+                  },
+                };
+                history.push_back(Interaction {
+                  role: Role::User,
+                  content: vec![tool_content],
+                });
+              }
+              // the LLM should never respond with an image or tool result.
+              Content::Image { .. } | Content::ToolResult { .. } => unreachable!(),
+            }
+          }
+        }
+        Ok(Response::Error { .. }) => unreachable!(),
+        Err(e) => {
+          // remove the offending user message
+          history.pop_back();
+          let _ = Err(e)?;
+        }
+      }
+    }
+
+    Ok(
+      output
+        .into_iter()
+        .map(|text| {
+          if let Ok(json) = serde_json::from_str(&text) {
+            if let Ok(builder) = plugin_env.build_message_json(json) {
+              BotResponse::Embedded(builder)
+            } else {
+              BotResponse::Text(text)
+            }
+          } else {
+            BotResponse::Text(text)
+          }
+        })
+        .collect(),
+    )
+  }
+
+  async fn msg_to_content(msg: &Message, ctx: &Context) -> Vec<Content> {
+    let mut items = vec![];
+    let text = msg
+      .content_safe(&ctx)
+      .replace("@Scrubby#2153", "Scrubby")
+      .trim()
+      .to_owned();
+
+    if !text.is_empty() {
+      items.push(Content::Text { text })
+    }
+
+    for attachment in &msg.attachments {
+      let content_type = attachment.content_type.as_ref().map(|s| s.as_str());
+
+      match content_type {
+        Some("image/jpeg") | Some("image/png") | Some("image/gif") | Some("image/webp") => {
+          if let Ok(bytes) = attachment.download().await {
+            items.push(Content::Image {
+              source: ImageSource::Base64 {
+                media_type: content_type.unwrap().to_owned(),
+                data: BASE64_STANDARD.encode(&bytes),
+              },
+            })
+          } else {
+          }
+        }
+        Some(_) | None => {}
+      }
+    }
+
+    items
   }
 }

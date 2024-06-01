@@ -4,8 +4,8 @@ use std::env;
 use tokio::sync::mpsc;
 
 mod bot;
+mod claude;
 mod event_handler;
-mod llm;
 mod plugins;
 
 use bot::Bot;
@@ -14,6 +14,7 @@ use bot::Bot;
 async fn main() -> anyhow::Result<()> {
   dotenv::dotenv().expect("Failed to load .env file");
   let token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKEN is not set");
+  let claude_key = env::var("CLAUDE_KEY").expect("No CLAUDE_KEY provided");
   let intents = GatewayIntents::GUILD_MESSAGES
     | GatewayIntents::DIRECT_MESSAGES
     | GatewayIntents::GUILDS
@@ -25,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
     .event_handler(handler)
     .await?;
 
-  tokio::spawn(Bot::start(rx));
+  tokio::spawn(async move { Bot::start("./plugins", &claude_key, rx).await });
 
   client.start().await?;
 

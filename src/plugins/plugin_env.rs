@@ -12,7 +12,7 @@ use serenity::{
   prelude::Context,
 };
 
-use crate::llm::Tool;
+use crate::claude::{Schema, Tool};
 use crate::plugins::module_search;
 use crate::plugins::modules::LuaClientCtx;
 
@@ -31,7 +31,7 @@ impl PluginEnv {
     }
   }
 
-  pub fn load(&mut self, reload: bool) -> anyhow::Result<()> {
+  pub fn load(&mut self, reload: bool) -> anyhow::Result<Vec<Tool>> {
     if let Err(e) = self.lua.load("math.randomseed(os.time())").exec() {
       println!("[{}] Failed to seed RNG: {}", "Error".red().bold(), e);
     }
@@ -61,7 +61,7 @@ impl PluginEnv {
         .clear()?;
     }
     self.load_files()?;
-    Ok(())
+    self.tools()
   }
 
   pub fn process_ready_event(&self, r: &Ready, ctx: &Context) -> anyhow::Result<()> {
@@ -227,7 +227,7 @@ impl PluginEnv {
     }
   }
 
-  pub fn tools(&self) -> anyhow::Result<Vec<crate::llm::Tool>> {
+  fn tools(&self) -> anyhow::Result<Vec<Tool>> {
     let plugins = self
       .lua
       .globals()
@@ -242,8 +242,7 @@ impl PluginEnv {
       let commands: mlua::Table = plugin.get("commands")?;
       commands.for_each::<String, mlua::Table>(|cmdname, cmd| {
         let description = cmd.get("description")?;
-
-        let input_schema: Option<crate::llm::Schema> = self
+        let input_schema: Option<Schema> = self
           .lua
           .from_value(cmd.get::<&str, mlua::Value>("schema")?)?;
 
