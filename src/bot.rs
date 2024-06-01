@@ -64,11 +64,18 @@ impl Bot {
           return;
         }
 
+        let content = LLM::content_for(&msg, &ctx).await;
+        if content.is_empty() {
+          return;
+        }
+        println!("{:?}", content);
         let res = self.llm.respond(
-          &msg.author.name,
-          &msg.content_safe(&ctx).replace("@Scrubby#2153", "Scrubby"),
+          msg,
+          content,
           |name: &str, input: HashMap<String, String>| self.plugin_env.invoke_tool(name, input),
         );
+        println!("res: {:?}", res);
+
         self.llm.trim();
 
         match res {
@@ -85,7 +92,7 @@ impl Bot {
             replies.push(resp);
           }
           Err(e) => {
-            replies.push((Some(format!("Error:\n```\n{}\n```", e).to_owned()), None));
+            replies.push((Some(format!("```\n{}\n```", e).to_owned()), None));
           }
         };
 
@@ -130,6 +137,12 @@ impl Bot {
     if msg.is_own(&ctx) {
       return false;
     }
+
+    // dont respond to blank messages
+    if msg.content_safe(ctx).trim().is_empty() && msg.attachments.is_empty() {
+      return false;
+    }
+
     // always respond to private messages
     if msg.is_private() {
       return true;

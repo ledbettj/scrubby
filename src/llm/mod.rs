@@ -1,6 +1,11 @@
+use base64::prelude::*;
 use colored::*;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use serenity::client::Context;
+use std::{
+  collections::{HashMap, VecDeque},
+  fmt::Display,
+};
 use ureq;
 
 mod content;
@@ -10,6 +15,8 @@ mod schema;
 pub use content::Content;
 pub use error::Error;
 pub use schema::Schema;
+
+use self::content::ImageSource;
 
 const CLAUDE_URL: &'static str = "https://api.anthropic.com/v1/messages";
 const CLAUDE_PROMPT: &'static str = r#"
@@ -90,14 +97,42 @@ pub struct Usage {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct ClaudeResponse {
-  id: String,
-  model: String,
-  role: String,
-  stop_reason: Option<String>,
-  stop_sequence: Option<String>,
-  usage: Usage,
-  content: Vec<Content>,
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeError {
+  InvalidRequestError { message: String },
+  AuthenticationError { message: String },
+  PermissionError { message: String },
+  NotFoundError { message: String },
+  RateLimitError { message: String },
+  ApiError { message: String },
+  OverloadedError { message: String },
+}
+
+impl Display for ClaudeError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{:?}", self)
+  }
+}
+
+impl std::error::Error for ClaudeError {}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeResponse {
+  Message {
+    id: String,
+    model: String,
+    role: String,
+    stop_reason: Option<String>,
+    stop_sequence: Option<String>,
+    usage: Usage,
+    content: Vec<Content>,
+  },
+  Error {
+    error: ClaudeError,
+  },
 }
 
 impl LLM {
@@ -133,18 +168,51 @@ impl LLM {
       .send_string(&body)
   }
 
+  pub async fn content_for(msg: &serenity::model::channel::Message, ctx: &Context) -> Vec<Content> {
+    let mut items = vec![];
+    let text = msg
+      .content_safe(&ctx)
+      .replace("@Scrubby#2153", "Scrubby")
+      .trim()
+      .to_owned();
+    if !text.is_empty() {
+      items.push(Content::Text { text })
+    }
+
+    for attachment in &msg.attachments {
+      let content_type = attachment.content_type.as_ref().map(|s| s.as_str());
+      println!("{:?}", attachment);
+      match content_type {
+        Some("image/jpeg") | Some("image/png") | Some("image/gif") | Some("image/webp") => {
+          if let Ok(bytes) = attachment.download().await {
+            items.push(Content::Image {
+              source: ImageSource::Base64 {
+                media_type: content_type.unwrap().to_owned(),
+                data: BASE64_STANDARD.encode(&bytes),
+              },
+            })
+          } else {
+            println!("download failed");
+          }
+        }
+        Some(_) | None => {}
+      }
+    }
+
+    items
+  }
+
   pub fn respond<F: Fn(&str, HashMap<String, String>) -> anyhow::Result<Option<String>>>(
-    &mut self, // msg: &Message
-    author: &str,
-    content: &str,
+    &mut self,
+    msg: &serenity::model::channel::Message,
+    content: Vec<Content>,
     invoke_tool: F,
   ) -> Result<String, Error> {
-    let author = author.to_owned();
+    let author = msg.author.name.to_owned();
+
     let mut interaction = Interaction {
       role: "user",
-      content: vec![Content::Text {
-        text: content.to_owned(),
-      }],
+      content,
     };
 
     let mut output: Vec<String> = vec![];
@@ -174,47 +242,57 @@ impl LLM {
 
       done = true;
 
-      self
-        .history
-        .get_mut(&author)
-        .unwrap()
-        .push_back(Interaction {
-          role: "assistant",
-          content: c.content.clone(),
-        });
+      match c {
+        ClaudeResponse::Error { error } => {
+          // remove the last message
+          self.history.get_mut(&author).unwrap().pop_back();
 
-      for content in c.content.into_iter() {
-        match content {
-          Content::Text { text } => {
-            output.push(text.clone());
-          }
-          // the LLM should never respond with an image or tool result.
-          // those are input only types.
-          Content::Image { .. } => unreachable!(),
-          Content::ToolResult { .. } => unreachable!(),
-          Content::ToolUse { id, name, input } => {
-            done = false;
+          return Err(error.into());
+        }
+        ClaudeResponse::Message { content, .. } => {
+          self
+            .history
+            .get_mut(&author)
+            .unwrap()
+            .push_back(Interaction {
+              role: "assistant",
+              content: content.clone(),
+            });
 
-            let tool_content = match invoke_tool(&name, input) {
-              Err(e) => Content::ToolResult {
-                tool_use_id: id,
-                content: e.to_string(),
-                is_error: true,
-              },
-              Ok(None) => Content::ToolResult {
-                tool_use_id: id,
-                content: "<no output>".into(),
-                is_error: false,
-              },
-              Ok(Some(s)) => Content::ToolResult {
-                tool_use_id: id,
-                content: s.into(),
-                is_error: false,
-              },
-            };
-            interaction = Interaction {
-              role: "user",
-              content: vec![tool_content],
+          for content in content.into_iter() {
+            match content {
+              Content::Text { text } => {
+                output.push(text.clone());
+              }
+              // the LLM should never respond with an image or tool result.
+              // those are input only types.
+              Content::Image { .. } => unreachable!(),
+              Content::ToolResult { .. } => unreachable!(),
+              Content::ToolUse { id, name, input } => {
+                done = false;
+
+                let tool_content = match invoke_tool(&name, input) {
+                  Err(e) => Content::ToolResult {
+                    tool_use_id: id,
+                    content: e.to_string(),
+                    is_error: true,
+                  },
+                  Ok(None) => Content::ToolResult {
+                    tool_use_id: id,
+                    content: "<no output>".into(),
+                    is_error: false,
+                  },
+                  Ok(Some(s)) => Content::ToolResult {
+                    tool_use_id: id,
+                    content: s.into(),
+                    is_error: false,
+                  },
+                };
+                interaction = Interaction {
+                  role: "user",
+                  content: vec![tool_content],
+                }
+              }
             }
           }
         }

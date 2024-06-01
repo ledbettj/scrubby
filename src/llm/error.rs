@@ -6,6 +6,7 @@ pub enum Error {
   IoError(io::Error),
   HttpError(ureq::Error),
   JsonError(serde_json::Error),
+  ClaudeError(super::ClaudeError),
 }
 
 impl From<ureq::Error> for Error {
@@ -26,9 +27,20 @@ impl From<serde_json::Error> for Error {
   }
 }
 
+impl From<super::ClaudeError> for Error {
+  fn from(value: super::ClaudeError) -> Self {
+    Self::ClaudeError(value)
+  }
+}
+
 impl Display for Error {
   fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-    write!(f, "{}", self)
+    match self {
+      Self::IoError(e) => write!(f, "IO Error: {}", e),
+      Self::HttpError(e) => write!(f, "HTTP Error: {}", e),
+      Self::JsonError(e) => write!(f, "JSON Error: {}", e),
+      Self::ClaudeError(e) => write!(f, "Claude Error: {}", e),
+    }
   }
 }
 
