@@ -9,7 +9,7 @@ use serenity::prelude::*;
 use tokio::sync::mpsc;
 
 use super::claude::{Client as Claude, Content, ImageSource, Interaction, Model, Role, Tool};
-use crate::claude::Response;
+use crate::claude::{self, Response};
 use crate::plugins::PluginEnv;
 
 #[derive(Debug)]
@@ -211,7 +211,8 @@ impl Bot {
       println!(
         "[{}] Claude Considering: {:?} with {} prior messages",
         "Debug".white().bold(),
-        history.back().unwrap(), history.len() - 1
+        history.back().unwrap(),
+        history.len() - 1
       );
       let resp = claude.create_message(&history.make_contiguous(), &tools);
       println!("[{}] Claude Returned: {:?}", "Debug".white().bold(), resp);
@@ -302,13 +303,14 @@ impl Bot {
       match content_type {
         Some("image/jpeg") | Some("image/png") | Some("image/gif") | Some("image/webp") => {
           if let Ok(bytes) = attachment.download().await {
-            items.push(Content::Image {
-              source: ImageSource::Base64 {
-                media_type: content_type.unwrap().to_owned(),
-                data: BASE64_STANDARD.encode(&bytes),
-              },
-            })
-          } else {
+            if let Ok(bytes) = claude::util::resize_image(bytes, 600, 600) {
+              items.push(Content::Image {
+                source: ImageSource::Base64 {
+                  media_type: content_type.unwrap().to_owned(),
+                  data: BASE64_STANDARD.encode(&bytes),
+                },
+              })
+            }
           }
         }
         Some(_) | None => {}
