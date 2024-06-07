@@ -63,6 +63,10 @@ plugin:command({
          self:log("Searching for ", json.encode(params))
 
          local r = client:search(params)
+         if not r then
+            return json.encode({ result = "No matching results" })
+         end
+
          client:enqueue(r.uri)
 
          return json.encode({

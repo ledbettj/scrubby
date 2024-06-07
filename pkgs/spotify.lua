@@ -72,9 +72,9 @@ function Client:search(params)
    )
    local data = resp.json
    if data.tracks.total == 0 then
-      return "Sorry, couldn't find any matching song"
+      return nil
    end
-   
+
    return data.tracks.items[1]
 end
 

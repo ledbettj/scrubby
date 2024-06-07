@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use base64::prelude::*;
 use colored::Colorize;
+use regex::{Captures, Regex};
 use serenity::all::{Channel, ChannelId, ChannelType};
 use serenity::builder::CreateMessage;
 use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
@@ -80,7 +81,22 @@ impl Bot {
           return;
         }
         let content = Bot::msg_to_content(&msg, &ctx).await;
+
         let mut history = self.history.entry(msg.channel_id).or_default();
+        Bot::ensure_valid_history(&mut history);
+
+        if let Ok(c) = msg.channel(&ctx).await {
+          match c {
+            Channel::Guild(ch) => {
+              let _ = ch.broadcast_typing(&ctx.http).await;
+            }
+            Channel::Private(ch) => {
+              let _ = ch.broadcast_typing(&ctx.http).await;
+            }
+            _ => {}
+          };
+        }
+
         let replies = match Bot::dispatch_llm(
           content,
           &mut history,
@@ -89,7 +105,14 @@ impl Bot {
           &self.plugin_env,
         ) {
           Ok(replies) => replies,
-          Err(e) => vec![BotResponse::Text(format!("```\n{}\n```", e).to_owned())],
+          Err(e) => {
+            println!("[{}] Error: {}", "Error".red().bold(), e);
+            history
+              .iter()
+              .for_each(|item| println!("\t[{}] {:?}", "Trace".white().bold(), item));
+
+            vec![BotResponse::Text(format!("```\n{}\n```", e).to_owned())]
+          }
         };
 
         while history.len() > 10 {
@@ -214,6 +237,7 @@ impl Bot {
         history.back().unwrap(),
         history.len() - 1
       );
+
       let resp = claude.create_message(&history.make_contiguous(), &tools);
       println!("[{}] Claude Returned: {:?}", "Debug".white().bold(), resp);
       match resp {
@@ -267,6 +291,55 @@ impl Bot {
       }
     }
 
+    // first try combining all messages into one and parsing.
+    let blob = output.join("");
+
+    if output.len() > 1 {
+      println!(
+        "Attempt 1: {:?}",
+        serde_json::from_str::<serde_json::Value>(&blob)
+      );
+      if let Ok(json) = serde_json::from_str(&blob) {
+        if let Ok(builder) = plugin_env.build_message_json(json) {
+          println!(
+            "[{}] Success: combined multiple outputs into valid JSON",
+            "Debug".white().bold()
+          );
+          return Ok(vec![BotResponse::Embedded(builder)]);
+        }
+      }
+    }
+
+    // otherwise see if there's a JSON blob in the middle of the text (dumb bot)
+    let start = blob.find("{");
+    let end = blob.rfind("}");
+    if let (Some(start), Some(end)) = (start, end) {
+      if start + 3 < end {
+        let (rest, suffix) = blob.split_at(end + 1);
+        let (prefix, span) = rest.split_at(start);
+        let span = fuckify(span);
+        println!("span is now {:?}", span);
+        if let Ok(json) = serde_json::from_str(&span) {
+          if let Ok(builder) = plugin_env.build_message_json(json) {
+            println!(
+              "[{}] Success: hacked that shit out of Scrubbys blob",
+              "Debug".white().bold()
+            );
+            let mut items = vec![];
+            if !prefix.trim().is_empty() {
+              items.push(BotResponse::Text(prefix.to_owned()));
+            }
+            items.push(BotResponse::Embedded(builder));
+            if !suffix.trim().is_empty() {
+              items.push(BotResponse::Text(suffix.to_owned()));
+            }
+            return Ok(items);
+          }
+        }
+      }
+    }
+
+    // otherwise try parsing each one individually
     Ok(
       output
         .into_iter()
@@ -283,6 +356,29 @@ impl Bot {
         })
         .collect(),
     )
+  }
+
+  fn ensure_valid_history(history: &mut VecDeque<Interaction>) {
+    loop {
+      match history.front() {
+        None => break,
+        Some(Interaction {
+          role: Role::Assistant,
+          ..
+        }) => {
+          history.pop_front();
+        }
+        Some(Interaction {
+          role: Role::User,
+          content,
+        }) => match content.first() {
+          None | Some(Content::ToolResult { .. }) => {
+            history.pop_front();
+          }
+          _ => break,
+        },
+      };
+    }
   }
 
   async fn msg_to_content(msg: &Message, ctx: &Context) -> Vec<Content> {
@@ -303,10 +399,12 @@ impl Bot {
       match content_type {
         Some("image/jpeg") | Some("image/png") | Some("image/gif") | Some("image/webp") => {
           if let Ok(bytes) = attachment.download().await {
-            if let Ok(bytes) = claude::util::resize_image(bytes, 600, 600) {
+            let res = claude::util::resize_image(bytes, 600, 600);
+            println!("{:?}", res);
+            if let Ok(bytes) = res {
               items.push(Content::Image {
                 source: ImageSource::Base64 {
-                  media_type: content_type.unwrap().to_owned(),
+                  media_type: "image/png".into(),
                   data: BASE64_STANDARD.encode(&bytes),
                 },
               })
@@ -319,4 +417,11 @@ impl Bot {
 
     items
   }
+}
+
+fn fuckify(s: &str) -> String {
+  Regex::new(r#"(?s)"(?:[^"\\]|\\.)*""#)
+    .unwrap()
+    .replace_all(s, |caps: &Captures| caps[0].replace("\n", "\\n"))
+    .into()
 }
