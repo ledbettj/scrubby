@@ -1,4 +1,5 @@
 use image::{imageops::FilterType, io::Reader as ImageReader, GenericImageView};
+use regex::{Captures, Regex};
 use std::io::Cursor;
 
 pub fn resize_image(bytes: Vec<u8>, max_w: u32, max_h: u32) -> anyhow::Result<Vec<u8>> {
@@ -15,4 +16,11 @@ pub fn resize_image(bytes: Vec<u8>, max_w: u32, max_h: u32) -> anyhow::Result<Ve
   img.write_to(&mut writer, image::ImageFormat::Png)?;
 
   Ok(output)
+}
+
+pub fn fixup_json(s: &str) -> String {
+  Regex::new(r#"(?s)"(?:[^"\\]|\\.)*""#)
+    .unwrap()
+    .replace_all(s, |caps: &Captures| caps[0].replace("\n", "\\n"))
+    .into()
 }

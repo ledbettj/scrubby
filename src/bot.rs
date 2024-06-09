@@ -2,7 +2,6 @@ use std::collections::{HashMap, VecDeque};
 
 use base64::prelude::*;
 use colored::Colorize;
-use regex::{Captures, Regex};
 use serenity::all::{Channel, ChannelId, ChannelType};
 use serenity::builder::CreateMessage;
 use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
@@ -10,7 +9,7 @@ use serenity::prelude::*;
 use tokio::sync::mpsc;
 
 use super::claude::{Client as Claude, Content, ImageSource, Interaction, Model, Role, Tool};
-use crate::claude::{self, Response};
+use crate::claude::{util, Response};
 use crate::plugins::PluginEnv;
 
 #[derive(Debug)]
@@ -121,6 +120,7 @@ impl Bot {
 
         for r in replies.into_iter() {
           match r {
+            BotResponse::Text(s) if s.trim().is_empty() => {}
             BotResponse::Text(s) => {
               msg
                 .reply(&ctx.http(), s)
@@ -317,7 +317,7 @@ impl Bot {
       if start + 3 < end {
         let (rest, suffix) = blob.split_at(end + 1);
         let (prefix, span) = rest.split_at(start);
-        let span = fuckify(span);
+        let span = util::fixup_json(span);
         println!("span is now {:?}", span);
         if let Ok(json) = serde_json::from_str(&span) {
           if let Ok(builder) = plugin_env.build_message_json(json) {
@@ -399,7 +399,7 @@ impl Bot {
       match content_type {
         Some("image/jpeg") | Some("image/png") | Some("image/gif") | Some("image/webp") => {
           if let Ok(bytes) = attachment.download().await {
-            let res = claude::util::resize_image(bytes, 600, 600);
+            let res = util::resize_image(bytes, 600, 600);
             println!("{:?}", res);
             if let Ok(bytes) = res {
               items.push(Content::Image {
@@ -417,11 +417,4 @@ impl Bot {
 
     items
   }
-}
-
-fn fuckify(s: &str) -> String {
-  Regex::new(r#"(?s)"(?:[^"\\]|\\.)*""#)
-    .unwrap()
-    .replace_all(s, |caps: &Captures| caps[0].replace("\n", "\\n"))
-    .into()
 }

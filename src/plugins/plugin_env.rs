@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::Read;
 
 use mlua::serde::LuaSerdeExt;
-use mlua::{ExternalError, IntoLua, Lua, Table};
+use mlua::{IntoLua, Lua, Table};
 use serenity::{
   builder::{CreateEmbed, CreateEmbedFooter, CreateMessage},
   model::gateway::Ready,

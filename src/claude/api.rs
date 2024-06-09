@@ -42,8 +42,8 @@ struct Request<'a> {
 
 #[derive(Deserialize, Debug)]
 pub struct Usage {
-  input_tokens: usize,
-  output_tokens: usize,
+  pub input_tokens: usize,
+  pub output_tokens: usize,
 }
 
 #[derive(Deserialize, Debug)]
