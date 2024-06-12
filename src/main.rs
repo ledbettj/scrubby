@@ -12,7 +12,10 @@ use bot::Bot;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-  dotenv::dotenv().expect("Failed to load .env file");
+  if let Err(e) = dotenv::dotenv() {
+    println!("Warning: failed to load .env file: {}", e);
+  }
+
   let token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKEN is not set");
   let claude_key = env::var("CLAUDE_KEY").expect("No CLAUDE_KEY provided");
   let intents = GatewayIntents::GUILD_MESSAGES

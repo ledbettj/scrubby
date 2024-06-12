@@ -1,0 +1,7 @@
+# flyctl launch added from .gitignore
+target
+**/.discord-token
+cache/*
+!cache/.gitkeep
+**/.env
+fly.toml
