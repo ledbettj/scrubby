@@ -390,6 +390,7 @@ impl Bot {
       .to_owned();
 
     if !text.is_empty() {
+      let text = format!("{}: {}", msg.author.name, text).to_owned();
       items.push(Content::Text { text })
     }
 
