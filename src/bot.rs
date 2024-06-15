@@ -389,8 +389,13 @@ impl Bot {
       .trim()
       .to_owned();
 
+    let author = msg
+      .author_nick(&ctx.http)
+      .await
+      .unwrap_or_else(|| msg.author.name.clone());
+
     if !text.is_empty() {
-      let text = format!("{}: {}", msg.author.name, text).to_owned();
+      let text = format!("{}: {}", author, text).to_owned();
       items.push(Content::Text { text })
     }
 
