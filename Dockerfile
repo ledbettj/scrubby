@@ -21,5 +21,6 @@ RUN apt-get update && apt-get install -y liblua5.4 --no-install-recommends
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/target/release/scrubby /app/scrubby
-COPY --from=builder /app/plugins /app/
+COPY --from=builder /app/plugins /app/plugins
+COPY --from=builder /app/cache /app/cache
 ENTRYPOINT ["/app/scrubby"]

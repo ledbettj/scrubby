@@ -38,7 +38,7 @@ impl Bot {
       claude: Claude::new(
         claude_key,
         include_str!("./claude/prompt.txt"),
-        Model::Sonnet,
+        Model::Sonnet35,
       ),
       tools: vec![],
       history: HashMap::new(),

@@ -17,6 +17,8 @@ pub enum Model {
   Haiku,
   #[serde(rename = "claude-3-sonnet-20240229")]
   Sonnet,
+  #[serde(rename = "claude-3-5-sonnet-20240620")]
+  Sonnet35,
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Interaction {
