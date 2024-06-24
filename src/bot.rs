@@ -69,20 +69,31 @@ impl Bot {
   async fn dispatch_event(&mut self, event: &BotEvent) -> () {
     match event {
       BotEvent::MessageEvent(msg, ctx) => {
-        if !Self::message_is_respondable(&msg, &ctx).await {
-          return;
-        }
+        let respondable = Self::message_is_respondable(&msg, &ctx).await;
 
-        if msg.content.contains("reload") {
+        if respondable && msg.content.contains("reload") {
           if let Ok(tools) = Self::process_reload_request(&msg, &ctx, &mut self.plugin_env).await {
             self.tools = tools;
           }
           return;
         }
+
         let content = Bot::msg_to_content(&msg, &ctx).await;
+        if content.is_empty() {
+          return;
+        }
 
         let mut history = self.history.entry(msg.channel_id).or_default();
         Bot::ensure_valid_history(&mut history);
+        let interaction = Interaction {
+          role: Role::User,
+          content,
+        };
+        history.push_back(interaction);
+
+        if !respondable {
+          return;
+        }
 
         if let Ok(c) = msg.channel(&ctx).await {
           match c {
@@ -96,23 +107,18 @@ impl Bot {
           };
         }
 
-        let replies = match Bot::dispatch_llm(
-          content,
-          &mut history,
-          &self.claude,
-          &self.tools,
-          &self.plugin_env,
-        ) {
-          Ok(replies) => replies,
-          Err(e) => {
-            println!("[{}] Error: {}", "Error".red().bold(), e);
-            history
-              .iter()
-              .for_each(|item| println!("\t[{}] {:?}", "Trace".white().bold(), item));
+        let replies =
+          match Bot::dispatch_llm(&mut history, &self.claude, &self.tools, &self.plugin_env) {
+            Ok(replies) => replies,
+            Err(e) => {
+              println!("[{}] Error: {}", "Error".red().bold(), e);
+              history
+                .iter()
+                .for_each(|item| println!("\t[{}] {:?}", "Trace".white().bold(), item));
 
-            vec![BotResponse::Text(format!("```\n{}\n```", e).to_owned())]
-          }
-        };
+              vec![BotResponse::Text(format!("```\n{}\n```", e).to_owned())]
+            }
+          };
 
         while history.len() > 10 {
           history.drain(..2);
@@ -209,7 +215,6 @@ impl Bot {
   }
 
   fn dispatch_llm(
-    content: Vec<Content>,
     history: &mut VecDeque<Interaction>,
     claude: &Claude,
     tools: &[Tool],
@@ -217,16 +222,6 @@ impl Bot {
   ) -> anyhow::Result<Vec<BotResponse>> {
     let mut output = vec![];
 
-    if content.is_empty() {
-      return Ok(vec![]);
-    }
-
-    let interaction = Interaction {
-      role: Role::User,
-      content,
-    };
-
-    history.push_back(interaction);
     let mut done = false;
 
     while !done {
