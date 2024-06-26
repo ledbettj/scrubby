@@ -69,77 +69,7 @@ impl Bot {
   async fn dispatch_event(&mut self, event: &BotEvent) -> () {
     match event {
       BotEvent::MessageEvent(msg, ctx) => {
-        if !Self::message_is_respondable(&msg, &ctx).await {
-          return;
-        }
-
-        if msg.content.contains("reload") {
-          if let Ok(tools) = Self::process_reload_request(&msg, &ctx, &mut self.plugin_env).await {
-            self.tools = tools;
-          }
-          return;
-        }
-        let content = Bot::msg_to_content(&msg, &ctx).await;
-
-        let mut history = self.history.entry(msg.channel_id).or_default();
-        Bot::ensure_valid_history(&mut history);
-
-        if let Ok(c) = msg.channel(&ctx).await {
-          match c {
-            Channel::Guild(ch) => {
-              let _ = ch.broadcast_typing(&ctx.http).await;
-            }
-            Channel::Private(ch) => {
-              let _ = ch.broadcast_typing(&ctx.http).await;
-            }
-            _ => {}
-          };
-        }
-
-        let replies = match Bot::dispatch_llm(
-          content,
-          &mut history,
-          &self.claude,
-          &self.tools,
-          &self.plugin_env,
-        ) {
-          Ok(replies) => replies,
-          Err(e) => {
-            println!("[{}] Error: {}", "Error".red().bold(), e);
-            history
-              .iter()
-              .for_each(|item| println!("\t[{}] {:?}", "Trace".white().bold(), item));
-
-            vec![BotResponse::Text(format!("```\n{}\n```", e).to_owned())]
-          }
-        };
-
-        while history.len() > 10 {
-          history.drain(..2);
-        }
-
-        for r in replies.into_iter() {
-          match r {
-            BotResponse::Text(s) if s.trim().is_empty() => {}
-            BotResponse::Text(s) => {
-              msg
-                .reply(&ctx.http(), s)
-                .await
-                .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
-                .ok();
-            }
-            BotResponse::Embedded(m) => {
-              msg
-                .channel_id
-                .send_message(ctx.http(), m)
-                .await
-                .map_err(|err| {
-                  println!("[{}] Failed to send message: {}", "Error".red().bold(), err)
-                })
-                .ok();
-            }
-          }
-        }
+        self.handle_message_event(msg, ctx).await;
       }
       BotEvent::ReadyEvent(ready, ctx) => {
         if let Err(err) = self.plugin_env.process_ready_event(&ready, &ctx) {
@@ -209,7 +139,6 @@ impl Bot {
   }
 
   fn dispatch_llm(
-    content: Vec<Content>,
     history: &mut VecDeque<Interaction>,
     claude: &Claude,
     tools: &[Tool],
@@ -217,17 +146,13 @@ impl Bot {
   ) -> anyhow::Result<Vec<BotResponse>> {
     let mut output = vec![];
 
-    if content.is_empty() {
-      return Ok(vec![]);
-    }
-
-    let interaction = Interaction {
-      role: Role::User,
-      content,
-    };
-
-    history.push_back(interaction);
     let mut done = false;
+
+    let last = history.back_mut().expect("No interactions to consider!?");
+    let len = last.content.len();
+    if len > 10 {
+      last.content = last.content[(len - 10)..].to_vec();
+    }
 
     while !done {
       done = true;
@@ -291,28 +216,11 @@ impl Bot {
       }
     }
 
-    // first try combining all messages into one and parsing.
+    //  see if there's a JSON blob in the middle of the text (dumb bot)
     let blob = output.join("");
-
-    if output.len() > 1 {
-      println!(
-        "Attempt 1: {:?}",
-        serde_json::from_str::<serde_json::Value>(&blob)
-      );
-      if let Ok(json) = serde_json::from_str(&blob) {
-        if let Ok(builder) = plugin_env.build_message_json(json) {
-          println!(
-            "[{}] Success: combined multiple outputs into valid JSON",
-            "Debug".white().bold()
-          );
-          return Ok(vec![BotResponse::Embedded(builder)]);
-        }
-      }
-    }
-
-    // otherwise see if there's a JSON blob in the middle of the text (dumb bot)
     let start = blob.find("{");
     let end = blob.rfind("}");
+
     if let (Some(start), Some(end)) = (start, end) {
       if start + 3 < end {
         let (rest, suffix) = blob.split_at(end + 1);
@@ -406,7 +314,6 @@ impl Bot {
         Some("image/jpeg") | Some("image/png") | Some("image/gif") | Some("image/webp") => {
           if let Ok(bytes) = attachment.download().await {
             let res = util::resize_image(bytes, 600, 600);
-            println!("{:?}", res);
             if let Ok(bytes) = res {
               items.push(Content::Image {
                 source: ImageSource::Base64 {
@@ -422,5 +329,97 @@ impl Bot {
     }
 
     items
+  }
+
+  async fn handle_message_event(&mut self, msg: &Message, ctx: &Context) {
+    let respondable = Self::message_is_respondable(&msg, &ctx).await;
+    let msg_content = Bot::msg_to_content(&msg, &ctx).await;
+
+    if msg_content.is_empty() {
+      return;
+    }
+
+    let mut history = self.history.entry(msg.channel_id).or_default();
+    Bot::ensure_valid_history(&mut history);
+
+    match history.back_mut() {
+      None
+      | Some(Interaction {
+        role: Role::Assistant,
+        ..
+      }) => {
+        history.push_back(Interaction {
+          role: Role::User,
+          content: msg_content,
+        });
+      }
+      Some(Interaction {
+        role: Role::User,
+        ref mut content,
+      }) => {
+        content.extend(msg_content);
+      }
+    }
+
+    if !respondable {
+      return;
+    }
+
+    if msg.content.contains("reload") {
+      if let Ok(tools) = Self::process_reload_request(&msg, &ctx, &mut self.plugin_env).await {
+        self.tools = tools;
+      }
+      return;
+    }
+
+    if let Ok(c) = msg.channel(&ctx).await {
+      match c {
+        Channel::Guild(ch) => {
+          let _ = ch.broadcast_typing(&ctx.http).await;
+        }
+        Channel::Private(ch) => {
+          let _ = ch.broadcast_typing(&ctx.http).await;
+        }
+        _ => {}
+      };
+    }
+
+    let replies = match Bot::dispatch_llm(&mut history, &self.claude, &self.tools, &self.plugin_env)
+    {
+      Ok(replies) => replies,
+      Err(e) => {
+        println!("[{}] Error: {}", "Error".red().bold(), e);
+        history
+          .iter()
+          .for_each(|item| println!("\t[{}] {:?}", "Trace".white().bold(), item));
+
+        vec![BotResponse::Text(format!("```\n{}\n```", e).to_owned())]
+      }
+    };
+
+    while history.len() > 10 {
+      history.drain(..2);
+    }
+
+    for r in replies.into_iter() {
+      match r {
+        BotResponse::Text(s) if s.trim().is_empty() => {}
+        BotResponse::Text(s) => {
+          msg
+            .reply(&ctx.http(), s)
+            .await
+            .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
+            .ok();
+        }
+        BotResponse::Embedded(m) => {
+          msg
+            .channel_id
+            .send_message(ctx.http(), m)
+            .await
+            .map_err(|err| println!("[{}] Failed to send message: {}", "Error".red().bold(), err))
+            .ok();
+        }
+      }
+    }
   }
 }
