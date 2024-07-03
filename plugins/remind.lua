@@ -18,7 +18,10 @@ plugin:command({
 
 plugin:command({
       name = "add",
-      description = [[Add a short block of text to the list of reminders, so it can be retrieved later.]],
+      description = [[
+        Add a short block of text to the list of reminders, so it can be retrieved later.
+        Only do this when the user explicitly requests you to remember something.
+      ]],
       schema = {
          ["type"] = "object",
          properties = {
@@ -42,7 +45,7 @@ plugin:command({
 
 plugin:command({
       name = "get",
-      description = [[Get all the items that are in the reminder list.]],
+      description = [[Get all the items that are in the reminder list.  Only do this when the user explicitly requests you to retrieve something.]],
       schema = nil,
       method = function(self, params)
          local list = self.cache:get("list") or { }
