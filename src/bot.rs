@@ -315,10 +315,12 @@ impl Bot {
           if let Ok(bytes) = attachment.download().await {
             let res = util::resize_image(bytes, 600, 600);
             if let Ok(bytes) = res {
+              let data = BASE64_STANDARD.encode(&bytes);
+
               items.push(Content::Image {
                 source: ImageSource::Base64 {
                   media_type: "image/png".into(),
-                  data: BASE64_STANDARD.encode(&bytes),
+                  data,
                 },
               })
             }

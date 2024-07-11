@@ -1,4 +1,9 @@
-use image::{imageops::FilterType, io::Reader as ImageReader, GenericImageView};
+use image::{
+  codecs::png::{self, PngEncoder},
+  imageops::FilterType,
+  io::Reader as ImageReader,
+  GenericImageView,
+};
 use regex::{Captures, Regex};
 use std::io::Cursor;
 
@@ -13,7 +18,12 @@ pub fn resize_image(bytes: Vec<u8>, max_w: u32, max_h: u32) -> anyhow::Result<Ve
   }
   let mut output = vec![];
   let mut writer = Cursor::new(&mut output);
-  img.write_to(&mut writer, image::ImageFormat::Png)?;
+  let encoder = PngEncoder::new_with_quality(
+    &mut writer,
+    png::CompressionType::Best,
+    png::FilterType::Adaptive,
+  );
+  img.write_with_encoder(encoder)?;
 
   Ok(output)
 }
