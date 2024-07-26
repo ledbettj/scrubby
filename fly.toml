@@ -13,4 +13,4 @@ primary_region = 'iad'
   cpus = 1
 
 [env]
-  LUA_EXPOSE_ENV="SPOTIFY_SECRET"
+  LUA_EXPOSE_ENV="SPOTIFY_SECRET,HA_KEY,HA_URL"
