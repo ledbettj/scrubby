@@ -115,4 +115,19 @@ plugin:command({
 })
 
 
+plugin:command({
+      name = "hvac_status",
+      description = [[ return the temperature and settings of the AC/Heat ]],
+      schema = nil,
+      method = function(self, params)
+         local r = client:state("climate.nest")
+
+         return json.encode({
+               state = r.state,
+               attrs = r.attributes
+         })
+      end
+})
+
+
 bot:register(plugin)
