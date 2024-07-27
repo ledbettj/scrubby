@@ -36,7 +36,7 @@ local LIGHT_SCHEMA = {
 
 
 plugin:command({
-      name = "toggle",
+      name = "light_toggle",
       description = [[
 Toggle a light in the house (e.g. turn it on if it's off, and vice versa).  Do not perform this action unless explicitly asked to.
 ]],
@@ -50,7 +50,7 @@ Toggle a light in the house (e.g. turn it on if it's off, and vice versa).  Do n
 })
 
 plugin:command({
-      name = "off",
+      name = "light_off",
       description = [[ Turn off a light in the house.  Do not perform this action unless explicitly asked to.]],
       schema = LIGHT_SCHEMA,
       method = function(self, params)
@@ -62,7 +62,7 @@ plugin:command({
 })
 
 plugin:command({
-      name = "on",
+      name = "light_on",
       description = [[ Turn off a light in the house.  Do not perform this action unless explicitly asked to.]],
       schema = LIGHT_SCHEMA,
       method = function(self, params)
@@ -74,7 +74,7 @@ plugin:command({
 })
 
 plugin:command({
-      name = "state",
+      name = "light_status",
       description = [[ Get the state of a light in the house. ]],
       schema = LIGHT_SCHEMA,
       method = function(self, params)
@@ -85,7 +85,7 @@ plugin:command({
 
 
 plugin:command({
-      name = "lights",
+      name = "light_list",
       description = [[ Get the list of lights that are usable in the house. ]],
       schema = nil,
       method = function(self, params)
@@ -95,6 +95,21 @@ plugin:command({
                { entity_id = "light.landing", name = "Landing" },
                { entity_id = "light.entrance_hall", name = "Entrance Hall"},
                { entity_id = "light.tv_room", name = "TV Room"}
+         })
+      end
+})
+
+plugin:command({
+      name = "camera_snap",
+      description = [[ return a snapshot image from the camera ]],
+      schema = nil,
+      method = function(self, params)
+         local r = client:state("camera.frontyard")
+
+         return json.encode({
+               instructions = "Format the response to the user as JSON with the included image",
+               updated_at = r.last_updated,
+               url = client.ha_url .. r.attributes.entity_picture
          })
       end
 })
