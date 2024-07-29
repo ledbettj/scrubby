@@ -172,6 +172,8 @@ impl Bot {
             content: content.clone(),
           });
 
+          let mut tool_output = vec![];
+
           for content in content.into_iter() {
             match content {
               Content::Text { text } => {
@@ -197,14 +199,17 @@ impl Bot {
                     is_error: false,
                   },
                 };
-                history.push_back(Interaction {
-                  role: Role::User,
-                  content: vec![tool_content],
-                });
+                tool_output.push(tool_content);
               }
               // the LLM should never respond with an image or tool result.
               Content::Image { .. } | Content::ToolResult { .. } => unreachable!(),
             }
+          }
+          if !tool_output.is_empty() {
+            history.push_back(Interaction {
+              role: Role::User,
+              content: tool_output,
+            });
           }
         }
         Ok(Response::Error { .. }) => unreachable!(),
