@@ -231,13 +231,9 @@ impl Bot {
         let (rest, suffix) = blob.split_at(end + 1);
         let (prefix, span) = rest.split_at(start);
         let span = util::fixup_json(span);
-        println!("span is now {:?}", span);
+
         if let Ok(json) = serde_json::from_str(&span) {
           if let Ok(builder) = plugin_env.build_message_json(json) {
-            println!(
-              "[{}] Success: hacked that shit out of Scrubbys blob",
-              "Debug".white().bold()
-            );
             let mut items = vec![];
             if !prefix.trim().is_empty() {
               items.push(BotResponse::Text(prefix.to_owned()));
