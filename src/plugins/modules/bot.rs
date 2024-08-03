@@ -1,4 +1,4 @@
-use colored::*;
+use log::info;
 use mlua::serde::LuaSerdeExt;
 use mlua::{ExternalError, Lua, Table, Value as LuaValue, Variadic};
 
@@ -65,7 +65,7 @@ pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
     let log = l.create_function(|_: &Lua, (plug, vals): (Table, Variadic<String>)| {
       let text = vals.into_iter().collect::<String>();
       let name: String = plug.get("name")?;
-      println!("[{name}] {text}", name = name.cyan().bold(), text = text);
+      info!("[{name}] {text}", name = name, text = text);
       Ok(())
     })?;
 
@@ -89,7 +89,7 @@ pub fn bot_loader(lua: &Lua) -> mlua::Result<Table> {
     let plugins: Table = bot.get("plugins")?;
     let name: String = arg.get("name")?;
 
-    println!("[{name}] registered", name = name.cyan().bold());
+    info!("[{name}] registered", name = name);
     plugins.set(name, arg)?;
     Ok(())
   })?;

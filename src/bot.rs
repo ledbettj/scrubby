@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use base64::prelude::*;
-use colored::Colorize;
+use log::{debug, error, trace};
 use serenity::all::{Channel, ChannelId, ChannelType};
 use serenity::builder::CreateMessage;
 use serenity::model::{channel::GuildChannel, channel::Message, gateway::Ready};
@@ -54,7 +54,7 @@ impl Bot {
 
     match bot.plugin_env.load(false) {
       Err(e) => {
-        println!("[{}] {}", "Error".red().bold(), e);
+        error!("{}", e);
       }
       Ok(tools) => {
         bot.tools = tools;
@@ -72,13 +72,13 @@ impl Bot {
         self.handle_message_event(msg, ctx).await;
       }
       BotEvent::ReadyEvent(ready, ctx) => {
-        if let Err(err) = self.plugin_env.process_ready_event(&ready, &ctx) {
-          println!("[{}] {}", "Error".red().bold(), err);
+        if let Err(e) = self.plugin_env.process_ready_event(&ready, &ctx) {
+          error!("{}", e);
         }
       }
       BotEvent::TickEvent(ctx) => {
-        if let Err(err) = self.plugin_env.process_tick_event(&ctx) {
-          println!("[{}] {}", "Error".red().bold(), err);
+        if let Err(e) = self.plugin_env.process_tick_event(&ctx) {
+          error!("{}", e);
         }
       }
     }
@@ -156,15 +156,15 @@ impl Bot {
 
     while !done {
       done = true;
-      println!(
-        "[{}] Claude Considering: {:?} with {} prior messages",
-        "Debug".white().bold(),
+      debug!(
+        "Claude Considering: {:?} with {} prior messages",
         history.back().unwrap(),
         history.len() - 1
       );
 
       let resp = claude.create_message(&history.make_contiguous(), &tools);
-      println!("[{}] Claude Returned: {:?}", "Debug".white().bold(), resp);
+      debug!("Claude Returned: {:?}", resp);
+
       match resp {
         Ok(Response::Message { content, .. }) => {
           history.push_back(Interaction {
@@ -391,10 +391,9 @@ impl Bot {
     {
       Ok(replies) => replies,
       Err(e) => {
-        println!("[{}] Error: {}", "Error".red().bold(), e);
-        history
-          .iter()
-          .for_each(|item| println!("\t[{}] {:?}", "Trace".white().bold(), item));
+        error!("{}", e);
+
+        history.iter().for_each(|item| trace!("{:?}", item));
 
         vec![BotResponse::Text(format!("```\n{}\n```", e).to_owned())]
       }
@@ -411,7 +410,7 @@ impl Bot {
           msg
             .reply(&ctx.http(), s)
             .await
-            .map_err(|err| println!("[{}] Failed to reply: {}", "Error".red().bold(), err))
+            .map_err(|err| error!("Failed to reply: {}", err))
             .ok();
         }
         BotResponse::Embedded(m) => {
@@ -419,7 +418,7 @@ impl Bot {
             .channel_id
             .send_message(ctx.http(), m)
             .await
-            .map_err(|err| println!("[{}] Failed to send message: {}", "Error".red().bold(), err))
+            .map_err(|err| error!("Failed to send message: {}", err))
             .ok();
         }
       }

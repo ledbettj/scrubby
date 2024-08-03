@@ -3,7 +3,7 @@ use std::{
   time::Duration,
 };
 
-use colored::Colorize;
+use log::{error, info};
 use serenity::{
   all::GuildId,
   async_trait,
@@ -31,22 +31,18 @@ impl Handler {
 #[async_trait]
 impl EventHandler for Handler {
   async fn ready(&self, ctx: Context, ready: Ready) {
-    println!(
-      "[{}] connected as {}",
-      "Bot".yellow().bold(),
-      ready.user.name
-    );
+    info!("connected as {}", ready.user.name,);
 
     let event = BotEvent::ReadyEvent(ready, ctx);
     if let Err(e) = self.tx.send(event) {
-      println!("[{}] {}", "Error".red().bold(), e);
+      error!("{}", e);
     }
   }
 
   async fn message(&self, ctx: Context, msg: Message) {
     let event = BotEvent::MessageEvent(msg, ctx);
     if let Err(e) = self.tx.send(event) {
-      println!("[{}] {}", "Error".red().bold(), e);
+      error!("{}", e);
     }
   }
 
@@ -56,12 +52,12 @@ impl EventHandler for Handler {
       let tx = self.tx.clone();
 
       tokio::spawn(async move {
-        println!("[{}] {}", "Bot".yellow().bold(), "event loop initialized");
+        info!("event loop initialized");
         loop {
           tokio::time::sleep(Duration::from_secs(1)).await;
           let event = BotEvent::TickEvent(ctx.clone());
           if let Err(e) = tx.send(event) {
-            println!("[{}] {}", "Error".red().bold(), e);
+            error!("{}", e);
           };
         }
       });

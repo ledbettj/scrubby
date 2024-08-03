@@ -1,4 +1,4 @@
-use colored::*;
+use log::{debug, error, warn};
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
@@ -33,7 +33,7 @@ impl PluginEnv {
 
   pub fn load(&mut self, reload: bool) -> anyhow::Result<Vec<Tool>> {
     if let Err(e) = self.lua.load("math.randomseed(os.time())").exec() {
-      println!("[{}] Failed to seed RNG: {}", "Error".red().bold(), e);
+      warn!("Failed to seed RNG: {}", e);
     }
 
     let env_tbl = self.lua.create_table()?;
@@ -42,7 +42,7 @@ impl PluginEnv {
       .split(",")
       .map(|key| (key, env::var(key).ok()))
       .try_for_each(|(key, value)| {
-        println!("[{}] exposing env.{}", "Bot".yellow().bold(), key);
+        debug!("exposing env.{}", key);
         env_tbl.set(key.to_owned(), value.clone())
       })?;
 
@@ -84,12 +84,7 @@ impl PluginEnv {
     plugins.for_each::<String, mlua::Table>(|plugname, plugin| {
       if let mlua::Value::Function(ready) = plugin.get::<&str, mlua::Value>("ready")? {
         if let Err(e) = ready.call::<(Table, LuaClientCtx), ()>((plugin, ctx.into())) {
-          println!(
-            "[{}] [{}] {}",
-            plugname.cyan().bold(),
-            "Error".red().bold(),
-            e
-          );
+          error!("[{}] {}", plugname, e);
         }
       }
       Ok(())
@@ -129,12 +124,7 @@ impl PluginEnv {
     plugins.for_each::<String, mlua::Table>(|plugname, plugin| {
       if let mlua::Value::Function(tick) = plugin.get::<&str, mlua::Value>("tick")? {
         if let Err(e) = tick.call::<(Table, LuaClientCtx), ()>((plugin, ctx.into())) {
-          println!(
-            "[{}] [{}] {}",
-            plugname.cyan().bold(),
-            "Error".red().bold(),
-            e
-          );
+          error!("[{}] {}", plugname, e);
         }
       }
       Ok(())
