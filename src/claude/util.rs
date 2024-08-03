@@ -1,8 +1,7 @@
 use image::{
   codecs::png::{self, PngEncoder},
   imageops::FilterType,
-  io::Reader as ImageReader,
-  GenericImageView,
+  GenericImageView, ImageReader,
 };
 use log::debug;
 use regex::{Captures, Regex};

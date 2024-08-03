@@ -86,7 +86,7 @@ impl Bot {
 
   async fn message_is_respondable(msg: &Message, ctx: &Context) -> bool {
     // dont respond to your own messages
-    if msg.is_own(&ctx) {
+    if msg.author.id == ctx.cache.current_user().id {
       return false;
     }
 
@@ -96,7 +96,7 @@ impl Bot {
     }
 
     // always respond to private messages
-    if msg.is_private() {
+    if msg.guild_id.is_none() {
       return true;
     }
 
