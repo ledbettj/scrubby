@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::Read;
 
 use mlua::serde::LuaSerdeExt;
-use mlua::{IntoLua, Lua, Table};
+use mlua::{Lua, Table};
 use serenity::{
   builder::{CreateEmbed, CreateEmbedFooter, CreateMessage},
   model::gateway::Ready,
@@ -192,7 +192,7 @@ impl PluginEnv {
   pub fn invoke_tool(
     &self,
     name: &str,
-    input: HashMap<String, String>,
+    input: HashMap<String, serde_json::Value>,
   ) -> anyhow::Result<Option<String>> {
     if let Some((plugname, toolname)) = name.split_once("-") {
       let plugin = self
@@ -209,8 +209,7 @@ impl PluginEnv {
         .get::<&str, Table>(toolname)?;
 
       let func = cmd.get::<&str, mlua::Function>("method")?;
-
-      let res: Option<String> = func.call((plugin, input.into_lua(&self.lua)?))?;
+      let res: Option<String> = func.call((plugin, self.lua.to_value(&input)?))?;
       Ok(res)
     } else {
       unreachable!();

@@ -20,7 +20,7 @@ pub enum Schema {
   Array {
     description: String,
     items: Box<Schema>,
-  }
+  },
 }
 
 impl Default for Schema {

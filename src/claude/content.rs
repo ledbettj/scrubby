@@ -19,7 +19,7 @@ pub enum Content {
   ToolUse {
     id: String,
     name: String,
-    input: HashMap<String, String>,
+    input: HashMap<String, serde_json::Value>,
   },
 }
 

@@ -13,8 +13,12 @@ local LIGHT_SCHEMA = {
          description = "the name of the light to toggle. This must be an entity_id in the form 'light.foo_bar' from the output of the lights tool. "
       },
       color = {
-         ["type"] = "string",
+         ["type"] = "array",
          description = "If the light supports colors, the color in rgb format.  For example, [255, 255, 255] is white.  [255, 0, 0] is red.  Optional.",
+         items = {
+            ["type"] = "number",
+            description = "The red, green, and blue components of the color.",
+         }
       },
       brightness = {
          ["type"] = "string",
@@ -23,7 +27,6 @@ local LIGHT_SCHEMA = {
    },
    required = { "target" }
 }
-
 
 plugin:command({
       name = "light_toggle",
@@ -58,8 +61,7 @@ plugin:command({
       method = function(self, params)
          local opts = {}
          if params.color then
-            _, _, r, g, b = string.find(params.color, "(%d+), (%d+), (%d+)")
-            opts.rgb_color = { r, g, b }
+            opts.rgb_color = params.color
          end
          if params.brightness then
             opts.brightness_pct = params.brightness

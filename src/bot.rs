@@ -395,7 +395,9 @@ impl Bot {
 
         history.iter().for_each(|item| trace!("{:?}", item));
 
-        vec![BotResponse::Text(format!(":skull:\n```\n{}\n```", e).to_owned())]
+        vec![BotResponse::Text(
+          format!(":skull:\n```\n{}\n```", e).to_owned(),
+        )]
       }
     };
 
