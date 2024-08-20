@@ -130,7 +130,6 @@ impl Client {
       .set("Content-Type", "application/json")
       .set("X-API-Key", &self.api_key)
       .set("Anthropic-Version", "2023-06-01")
-      .set("Anthropic-Beta", "tools-2024-05-16")
       .send_string(&body);
 
     let resp = match resp {

@@ -12,6 +12,14 @@ local LIGHT_SCHEMA = {
          ["type"] = "string",
          description = "the name of the light to toggle. This must be an entity_id in the form 'light.foo_bar' from the output of the lights tool. "
       },
+      color = {
+         ["type"] = "string",
+         description = "If the light supports colors, the color in rgb format.  For example, [255, 255, 255] is white.  [255, 0, 0] is red.  Optional.",
+      },
+      brightness = {
+         ["type"] = "string",
+         description = "Determines the brightness of the light, from 0 (off) to 100 (full brightness).  Optional."
+      }
    },
    required = { "target" }
 }
@@ -24,7 +32,7 @@ Toggle a light in the house (e.g. turn it on if it's off, and vice versa).  Do n
 ]],
       schema = LIGHT_SCHEMA,
       method = function(self, params)
-         client:action('homeassistant', 'toggle', params.target)
+         client:action('light', 'toggle', params.target)
 
          local r = client:state(params.target)
          return json.encode(r)
@@ -36,7 +44,7 @@ plugin:command({
       description = [[ Turn off a light in the house.  Do not perform this action unless explicitly asked to.]],
       schema = LIGHT_SCHEMA,
       method = function(self, params)
-         client:action('homeassistant', 'turn_off', params.target)
+         client:action('light', 'turn_off', params.target)
 
          local r = client:state(params.target)
          return json.encode(r)
@@ -48,7 +56,16 @@ plugin:command({
       description = [[ Turn off a light in the house.  Do not perform this action unless explicitly asked to.]],
       schema = LIGHT_SCHEMA,
       method = function(self, params)
-         client:action('homeassistant', 'turn_on', params.target)
+         local opts = {}
+         if params.color then
+            _, _, r, g, b = string.find(params.color, "(%d+), (%d+), (%d+)")
+            opts.rgb_color = { r, g, b }
+         end
+         if params.brightness then
+            opts.brightness_pct = params.brightness
+         end
+
+         client:action('light', 'turn_on', params.target, opts)
 
          local r = client:state(params.target)
          return json.encode(r)

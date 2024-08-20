@@ -10,10 +10,13 @@ function Client:new(ha_url, ha_key)
    return client
 end
 
-function Client:action(service, domain, entity_id)
+function Client:action(service, domain, entity_id, rest)
+   rest = rest or {}
+   rest.entity_id = entity_id
+
    local resp = http.post(
       self.ha_url .. "/api/services/" .. service .. "/" .. domain,
-      json.encode({ entity_id = entity_id }),
+      json.encode(rest),
       {
          json = true,
          headers = {
