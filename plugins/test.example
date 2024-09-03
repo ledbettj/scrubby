@@ -14,8 +14,8 @@ plugin.tool("greet",
     },
     required: ["name"],
   },
-  |self, params| {
-     `what's up, ${params}`
+  |params| {
+     `what's up, ${params.name}`
   }
 );
 

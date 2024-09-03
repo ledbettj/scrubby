@@ -1,56 +1,138 @@
-use std::{cell::RefCell, collections::{HashMap, VecDeque}};
-
-use log::{debug, error, info, trace};
-use base64::prelude::*;
-
-use serenity::{
-  all::{Channel, ChannelId, ChannelType, GuildChannel, GuildId}, async_trait, builder::CreateMessage, model::{channel::Message, gateway::Ready}, prelude::*
-};
-
+use crate::claude::{Client, Content, ImageSource, Interaction, Response, Role};
+use crate::dispatcher::BotEvent;
 use crate::plugins::Host;
-use crate::claude::{Content, Client, Role, Interaction, ImageSource, Response};
+use base64::prelude::*;
+use log::{debug, error, trace};
+use serenity::all::{Channel, ChannelId, ChannelType, GuildChannel};
+use serenity::prelude::CacheHttp;
+use std::collections::{HashMap, VecDeque};
+use tokio::sync::mpsc::UnboundedReceiver;
+
 pub enum BotResponse {
   Text(String),
-  Embedded(CreateMessage),
 }
 
-pub struct Handler {
+pub struct EventHandler {
   host: Host,
   claude: Client,
   history: HashMap<ChannelId, VecDeque<Interaction>>,
 }
 
-impl Handler {
-  pub fn new(host: Host, claude_key: &str) -> Self {
+impl EventHandler {
+  fn new(plugin_dir: &str, claude_key: &str) -> Self {
     Self {
-      host,
+      host: Host::new(plugin_dir),
       claude: Client::new(
         claude_key,
         include_str!("./claude/prompt.txt"),
-        crate::claude::Model::Sonnet35
+        crate::claude::Model::Sonnet35,
       ),
       history: HashMap::new(),
     }
   }
+  pub async fn start(plugin_dir: &str, claude_key: &str, mut rx: UnboundedReceiver<BotEvent>) {
+    let mut handler = Self::new(plugin_dir, claude_key);
+    if let Err(e) = handler.host.load() {
+      error!("Loading plugins: {}", e);
+    }
 
-  async fn message_is_respondable(msg: &Message, ctx: &Context) -> bool {
+    while let Some(event) = rx.recv().await {
+      handler.on_event(&event).await;
+    }
+  }
+
+  async fn on_event(&mut self, event: &BotEvent) {
+    let is_respondable = Self::event_is_respondable(event).await;
+    let msg_content = Self::msg_to_content(event).await;
+
+    let mut history = self.history.entry(event.msg.channel_id).or_default();
+    Self::ensure_valid_history(&mut history);
+
+    match history.back_mut() {
+      None
+      | Some(Interaction {
+        role: Role::Assistant,
+        ..
+      }) => {
+        history.push_back(Interaction {
+          role: Role::User,
+          content: msg_content,
+        });
+      }
+      Some(Interaction {
+        role: Role::User,
+        ref mut content,
+      }) => {
+        content.extend(msg_content);
+      }
+    }
+
+    if !is_respondable {
+      return;
+    }
+
+    if let Ok(c) = event.msg.channel(&event.ctx).await {
+      match c {
+        Channel::Guild(ch) => {
+          let _ = ch.broadcast_typing(&event.ctx.http).await;
+        }
+        Channel::Private(ch) => {
+          let _ = ch.broadcast_typing(&event.ctx.http).await;
+        }
+        _ => {}
+      };
+    }
+
+    let replies = match Self::dispatch_llm(&mut history, &self.claude, &self.host).await {
+      Ok(replies) => replies,
+      Err(e) => {
+        error!("{}", e);
+
+        history.iter().for_each(|item| trace!("{:?}", item));
+
+        vec![BotResponse::Text(
+          format!(":skull:\n```\n{}\n```", e).to_owned(),
+        )]
+      }
+    };
+
+    while history.len() > 10 {
+      history.drain(..2);
+    }
+
+    for r in replies.into_iter() {
+      match r {
+        BotResponse::Text(s) if s.trim().is_empty() => {}
+        BotResponse::Text(s) => {
+          event
+            .msg
+            .reply(&event.ctx.http(), s)
+            .await
+            .map_err(|err| error!("Failed to reply: {}", err))
+            .ok();
+        }
+      }
+    }
+  }
+
+  async fn event_is_respondable(event: &BotEvent) -> bool {
     // dont respond to your own messages
-    if msg.author.id == ctx.cache.current_user().id {
+    if event.msg.author.id == event.ctx.cache.current_user().id {
       return false;
     }
 
     // dont respond to blank messages
-    if msg.content_safe(ctx).trim().is_empty() && msg.attachments.is_empty() {
+    if event.msg.content_safe(&event.ctx).trim().is_empty() && event.msg.attachments.is_empty() {
       return false;
     }
 
     // always respond to private messages
-    if msg.guild_id.is_none() {
+    if event.msg.guild_id.is_none() {
       return true;
     }
 
     // respond if it's a thread we're involved in.
-    let channel = msg.channel(ctx.http()).await;
+    let channel = event.msg.channel(event.ctx.http()).await;
     if let Ok(Channel::Guild(GuildChannel {
       kind: ChannelType::PublicThread,
       member: Some(_),
@@ -61,32 +143,34 @@ impl Handler {
     }
 
     // respond if you're mentioned
-    if let Ok(is_mentioned) = msg.mentions_me(&ctx).await {
+    if let Ok(is_mentioned) = event.msg.mentions_me(&event.ctx).await {
       is_mentioned
     } else {
       false
     }
   }
 
-  async fn msg_to_content(msg: &Message, ctx: &Context) -> Vec<Content> {
+  async fn msg_to_content(event: &BotEvent) -> Vec<Content> {
     let mut items = vec![];
-    let text = msg
-      .content_safe(&ctx)
+    let text = event
+      .msg
+      .content_safe(&event.ctx)
       .replace("@Scrubby#2153", "Scrubby")
       .trim()
       .to_owned();
 
-    let author = msg
-      .author_nick(&ctx.http)
+    let author = event
+      .msg
+      .author_nick(&event.ctx.http)
       .await
-      .unwrap_or_else(|| msg.author.name.clone());
+      .unwrap_or_else(|| event.msg.author.name.clone());
 
     if !text.is_empty() {
       let text = format!("{}: {}", author, text).to_owned();
       items.push(Content::Text { text })
     }
 
-    for attachment in &msg.attachments {
+    for attachment in &event.msg.attachments {
       let content_type = attachment.content_type.as_ref().map(|s| s.as_str());
 
       match content_type {
@@ -112,29 +196,6 @@ impl Handler {
     items
   }
 
-  fn ensure_valid_history(history: &mut VecDeque<Interaction>) {
-    loop {
-      match history.front() {
-        None => break,
-        Some(Interaction {
-          role: Role::Assistant,
-          ..
-        }) => {
-          history.pop_front();
-        }
-        Some(Interaction {
-          role: Role::User,
-          content,
-        }) => match content.first() {
-          None | Some(Content::ToolResult { .. }) => {
-            history.pop_front();
-          }
-          _ => break,
-        },
-      };
-    }
-  }
-
   async fn dispatch_llm(
     history: &mut VecDeque<Interaction>,
     claude: &Client,
@@ -158,7 +219,9 @@ impl Handler {
         history.len() - 1
       );
 
-      let resp = claude.create_message(&history.make_contiguous(), host).await;
+      let resp = claude
+        .create_message(&history.make_contiguous(), host)
+        .await;
       debug!("Claude Returned: {:?}", resp);
 
       match resp {
@@ -222,104 +285,30 @@ impl Handler {
       output
         .into_iter()
         .map(|text| BotResponse::Text(text))
-        .collect()
+        .collect(),
     )
   }
-}
 
-#[async_trait]
-impl EventHandler for Handler {
-  async fn ready(&self, ctx: Context, ready: Ready) {
-    info!("connected as {}", ready.user.name,);
-  }
-
-  async fn message(&self, ctx: Context, msg: Message) {
-    debug!("{:?}", msg);
-
-    let respondable = Self::message_is_respondable(&msg, &ctx).await;
-    let msg_content = Self::msg_to_content(&msg, &ctx).await;
-
-    if msg_content.is_empty() {
-      return;
-    }
-
-    let mut history = self.history.entry(msg.channel_id).or_default();
-    Self::ensure_valid_history(&mut history);
-
-    match history.back_mut() {
-      None
-      | Some(Interaction {
-        role: Role::Assistant,
-        ..
-      }) => {
-        history.push_back(Interaction {
+  fn ensure_valid_history(history: &mut VecDeque<Interaction>) {
+    loop {
+      match history.front() {
+        None => break,
+        Some(Interaction {
+          role: Role::Assistant,
+          ..
+        }) => {
+          history.pop_front();
+        }
+        Some(Interaction {
           role: Role::User,
-          content: msg_content,
-        });
-      }
-      Some(Interaction {
-        role: Role::User,
-        ref mut content,
-      }) => {
-        content.extend(msg_content);
-      }
-    }
-
-    if !respondable {
-      return;
-    }
-
-    if let Ok(c) = msg.channel(&ctx).await {
-      match c {
-        Channel::Guild(ch) => {
-          let _ = ch.broadcast_typing(&ctx.http).await;
-        }
-        Channel::Private(ch) => {
-          let _ = ch.broadcast_typing(&ctx.http).await;
-        }
-        _ => {}
+          content,
+        }) => match content.first() {
+          None | Some(Content::ToolResult { .. }) => {
+            history.pop_front();
+          }
+          _ => break,
+        },
       };
     }
-
-    let replies = match Self::dispatch_llm(&mut history, &self.claude, &self.host).await {
-      Ok(replies) => replies,
-      Err(e) => {
-        error!("{}", e);
-
-        history.iter().for_each(|item| trace!("{:?}", item));
-
-        vec![BotResponse::Text(
-          format!(":skull:\n```\n{}\n```", e).to_owned(),
-        )]
-      }
-    };
-
-    while history.len() > 10 {
-      history.drain(..2);
-    }
-
-    for r in replies.into_iter() {
-      match r {
-        BotResponse::Text(s) if s.trim().is_empty() => {}
-        BotResponse::Text(s) => {
-          msg
-            .reply(&ctx.http(), s)
-            .await
-            .map_err(|err| error!("Failed to reply: {}", err))
-            .ok();
-        }
-        BotResponse::Embedded(m) => {
-          msg
-            .channel_id
-            .send_message(ctx.http(), m)
-            .await
-            .map_err(|err| error!("Failed to send message: {}", err))
-            .ok();
-        }
-      }
-    }
-  }
-
-  async fn cache_ready(&self, ctx: Context, _guilds: Vec<GuildId>) {
   }
 }

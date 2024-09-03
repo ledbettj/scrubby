@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use log::info;
 use rhai::{
-  module_resolvers::{FileModuleResolver, ModuleResolversCollection, StaticModuleResolver}, CustomType, Dynamic, Engine, FnPtr, FuncRegistration, Module, Position, TypeBuilder, AST
+  module_resolvers::{FileModuleResolver, ModuleResolversCollection, StaticModuleResolver},
+  CustomType, Dynamic, Engine, FnPtr, FuncRegistration, Module, Position, TypeBuilder, AST,
 };
 
 use crate::claude::Schema;
-
 
 #[derive(Debug)]
 pub struct Host {
@@ -17,15 +17,23 @@ pub struct Host {
 }
 
 impl Host {
-  pub fn invoke_tool(&self, name: &str, input: HashMap<String, String>) -> anyhow::Result<Option<String>> {
+  pub fn invoke_tool(
+    &self,
+    name: &str,
+    input: HashMap<String, String>,
+  ) -> anyhow::Result<Option<String>> {
     let tool = self
       .tools
       .iter()
       .find(|t| t.inner.name == name)
       .ok_or(anyhow::Error::msg("No tool found"))?;
 
-    let s : Option<String> = tool.func.call(&self.engine, &AST::empty(), (input,))?;
-    Ok(s)
+    let input: rhai::Map = input
+      .into_iter()
+      .map(|(k, v)| (k.into(), v.into()))
+      .collect();
+    let s: String = tool.func.call(&self.engine, &AST::empty(), (input,))?;
+    Ok(Some(s))
   }
 
   pub fn new<S: Into<String> + AsRef<str>>(path: S) -> Self {
@@ -93,7 +101,6 @@ impl Host {
     Ok(())
   }
 }
-
 
 #[derive(Debug, Clone, CustomType)]
 pub struct Plugin {

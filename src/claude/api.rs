@@ -117,7 +117,7 @@ impl Client {
     messages: &[Interaction],
     host: &crate::plugins::Host,
   ) -> Result<Response, super::Error> {
-    let tools : Vec<Tool> = host.tools.iter().map(|t| t.inner.clone()).collect();
+    let tools: Vec<Tool> = host.tools.iter().map(|t| t.inner.clone()).collect();
     let payload = Request {
       model: self.model,
       max_tokens: 1024,
@@ -128,7 +128,8 @@ impl Client {
 
     let body = serde_json::to_string(&payload)?;
     let client = reqwest::Client::new();
-    let resp = client.post(API_URL)
+    let resp = client
+      .post(API_URL)
       .header("Content-Type", "application/json")
       .header("X-API-Key", &self.api_key)
       .header("Anthropic-Version", "2023-06-01")

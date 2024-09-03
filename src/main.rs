@@ -1,13 +1,17 @@
 use dotenv;
-use serenity::prelude::*;
-use std::env;
-
 use env_logger::Builder;
 use log::warn;
+use serenity::prelude::*;
+use std::env;
+use tokio::sync::mpsc;
 
 mod claude;
-mod event_handler;
+mod dispatcher;
+mod handler;
 mod plugins;
+
+use dispatcher::{BotEvent, EventDispatcher};
+use handler::EventHandler;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -28,15 +32,14 @@ async fn main() -> anyhow::Result<()> {
     | GatewayIntents::GUILDS
     | GatewayIntents::MESSAGE_CONTENT;
 
-  let mut host = plugins::Host::new("./plugins");
-  host.load()?;
+  let (tx, rx) = mpsc::unbounded_channel::<BotEvent>();
 
-  let handler = event_handler::Handler::new(host, &claude_key);
+  let dispatcher = EventDispatcher::new(tx);
   let mut client = Client::builder(&token, intents)
-    .event_handler(handler)
+    .event_handler(dispatcher)
     .await?;
 
-
+  tokio::spawn(async move { EventHandler::start("./plugins", &claude_key, rx).await });
 
   client.start().await?;
 

@@ -12,5 +12,5 @@ primary_region = 'iad'
   cpu_kind = 'shared'
   cpus = 1
 
-[env]
-  LUA_EXPOSE_ENV="SPOTIFY_SECRET,HA_KEY,HA_URL"
+[mounts]
+destination="/plugins"
