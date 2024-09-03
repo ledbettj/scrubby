@@ -1,0 +1,22 @@
+import "bot" as bot;
+
+let plugin = bot::plugin("Test Plugin");
+
+plugin.tool("greet",
+  "say hello to someone",
+  #{
+    type: "object",
+    properties: #{
+      name: #{
+        description: "name of the person to say hi to",
+        type: "string",
+      }
+    },
+    required: ["name"],
+  },
+  |self, params| {
+     `what's up, ${params}`
+  }
+);
+
+export plugin;
