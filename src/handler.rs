@@ -1,15 +1,29 @@
 use crate::claude::{Client, Content, ImageSource, Interaction, Response, Role};
 use crate::dispatcher::BotEvent;
 use crate::plugins::Host;
+use crate::{DEFAULT_PROMPT, PROMPT_FILE};
 use base64::prelude::*;
-use log::{debug, error, trace};
+use log::{debug, error, info, trace};
+use regex::Regex;
 use serenity::all::{Channel, ChannelId, ChannelType, GuildChannel};
 use serenity::prelude::CacheHttp;
 use std::collections::{HashMap, VecDeque};
+use std::fs;
+use tokio::join;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub enum BotResponse {
   Text(String),
+  Error(anyhow::Error),
+}
+
+impl Into<String> for BotResponse {
+  fn into(self) -> String {
+    match self {
+      BotResponse::Text(s) => s.trim().into(),
+      BotResponse::Error(e) => format!(":skull: Aw shit.\n```\n{}\n```", e.to_string()).into(),
+    }
+  }
 }
 
 pub struct EventHandler {
@@ -19,19 +33,20 @@ pub struct EventHandler {
 }
 
 impl EventHandler {
-  fn new(plugin_dir: &str, claude_key: &str) -> Self {
+  fn new(plugin_dir: &str, claude_key: &str, prompt: &str) -> Self {
     Self {
       host: Host::new(plugin_dir),
-      claude: Client::new(
-        claude_key,
-        include_str!("./claude/prompt.txt"),
-        crate::claude::Model::Sonnet35,
-      ),
+      claude: Client::new(claude_key, prompt, crate::claude::Model::Sonnet35),
       history: HashMap::new(),
     }
   }
-  pub async fn start(plugin_dir: &str, claude_key: &str, mut rx: UnboundedReceiver<BotEvent>) {
-    let mut handler = Self::new(plugin_dir, claude_key);
+  pub async fn start(
+    plugin_dir: &str,
+    claude_key: &str,
+    prompt: &str,
+    mut rx: UnboundedReceiver<BotEvent>,
+  ) {
+    let mut handler = Self::new(plugin_dir, claude_key, prompt);
     if let Err(e) = handler.host.load() {
       error!("Loading plugins: {}", e);
     }
@@ -41,9 +56,68 @@ impl EventHandler {
     }
   }
 
+  async fn on_command(&mut self, event: &BotEvent) -> Option<Option<String>> {
+    let content = &event.msg.content;
+    let r = Regex::new("(?ms)set-prompt (.*)").expect("Failed to compile regex");
+
+    if let Some(cap) = r.captures(content) {
+      let prompt = cap.get(1).unwrap().as_str();
+      info!("Resetting prompt: {}", prompt);
+      self.claude.set_prompt(prompt);
+      std::fs::write(PROMPT_FILE, prompt).expect("Failed to write prompt to storage");
+      return Some(None);
+    }
+
+    if content.contains("clear-prompt") {
+      self.claude.set_prompt(DEFAULT_PROMPT);
+      std::fs::remove_file(PROMPT_FILE).ok();
+      return Some(None);
+    }
+
+    let r = Regex::new(r#"(?ms)eval-script\s*```(.+)```"#).unwrap();
+    if let Some(cap) = r.captures(content) {
+      let resp = self.host.eval(cap.get(1).unwrap().as_str());
+      let resp = format!("```\n{}\n```", resp).to_string();
+      return Some(Some(resp));
+    }
+
+    let r = Regex::new(r#"install-script\s*(.+)"#).unwrap();
+    if let Some(cap) = r.captures(content) {
+      let url = cap.get(1).unwrap().as_str();
+      let url = reqwest::Url::parse(url).unwrap();
+      let filename = url.path_segments().unwrap().last().unwrap().to_owned();
+
+      if let Ok(resp) = reqwest::get(url).await {
+        let text = resp.text().await.unwrap();
+        fs::write(format!("./storage/{}", filename), text).ok();
+      }
+
+      self.host.load().ok();
+      return Some(None);
+    }
+
+    None
+  }
+
   async fn on_event(&mut self, event: &BotEvent) {
-    let is_respondable = Self::event_is_respondable(event).await;
-    let msg_content = Self::msg_to_content(event).await;
+    let (is_respondable, msg_content) = join!(
+      Self::event_is_respondable(event),
+      Self::msg_to_content(event)
+    );
+
+    if is_respondable {
+      match self.on_command(&event).await {
+        Some(None) => {
+          event.msg.react(&event.ctx.http(), '✅').await.ok();
+          return;
+        }
+        Some(Some(s)) => {
+          event.msg.reply(&event.ctx.http(), s).await.ok();
+          return;
+        }
+        None => {}
+      }
+    }
 
     let mut history = self.history.entry(event.msg.channel_id).or_default();
     Self::ensure_valid_history(&mut history);
@@ -90,9 +164,7 @@ impl EventHandler {
 
         history.iter().for_each(|item| trace!("{:?}", item));
 
-        vec![BotResponse::Text(
-          format!(":skull:\n```\n{}\n```", e).to_owned(),
-        )]
+        vec![BotResponse::Error(e)]
       }
     };
 
@@ -101,16 +173,14 @@ impl EventHandler {
     }
 
     for r in replies.into_iter() {
-      match r {
-        BotResponse::Text(s) if s.trim().is_empty() => {}
-        BotResponse::Text(s) => {
-          event
-            .msg
-            .reply(&event.ctx.http(), s)
-            .await
-            .map_err(|err| error!("Failed to reply: {}", err))
-            .ok();
-        }
+      let s: String = r.into();
+      if !s.is_empty() {
+        event
+          .msg
+          .reply(&event.ctx.http(), s)
+          .await
+          .map_err(|err| error!("Failed to reply: {}", err))
+          .ok();
       }
     }
   }
@@ -280,7 +350,6 @@ impl EventHandler {
       }
     }
 
-    // otherwise try parsing each one individually
     Ok(
       output
         .into_iter()

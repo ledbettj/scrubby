@@ -112,6 +112,10 @@ impl Client {
     }
   }
 
+  pub fn set_prompt<S: Into<String>>(&mut self, prompt: S) {
+    self.prompt = prompt.into();
+  }
+
   pub async fn create_message(
     &self,
     messages: &[Interaction],

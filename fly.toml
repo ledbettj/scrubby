@@ -13,4 +13,5 @@ primary_region = 'iad'
   cpus = 1
 
 [mounts]
-destination="/plugins"
+destination="/app/storage"
+source="scrubby_data"

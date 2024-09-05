@@ -17,5 +17,6 @@ RUN cargo build --release --bin scrubby2
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 COPY --from=builder /app/target/release/scrubby2 /app/scrubby2
-COPY --from=builder /app/plugins /app/plugins
+#COPY --from=builder /app/plugins /app/plugins
+
 ENTRYPOINT ["/app/scrubby2"]

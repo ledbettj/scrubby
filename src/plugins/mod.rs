@@ -36,6 +36,13 @@ impl Host {
     Ok(Some(s))
   }
 
+  pub fn eval<S: AsRef<str>>(&self, input: S) -> String {
+    match self.engine.eval::<Dynamic>(input.as_ref()) {
+      Err(e) => e.to_string(),
+      Ok(d) => format!("{}", d).to_string(),
+    }
+  }
+
   pub fn new<S: Into<String> + AsRef<str>>(path: S) -> Self {
     let mut engine = Engine::new();
     let mut bot = Module::new();
@@ -60,6 +67,14 @@ impl Host {
     engine.set_module_resolver(resolver);
 
     engine.set_max_strings_interned(1024);
+
+    engine.on_progress(|ops| {
+      if ops > 10_000 {
+        Some("Evaluation killed due to timeout.".into())
+      } else {
+        None
+      }
+    });
 
     Self {
       engine,

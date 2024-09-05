@@ -2,7 +2,7 @@ use dotenv;
 use env_logger::Builder;
 use log::warn;
 use serenity::prelude::*;
-use std::env;
+use std::{env, fs};
 use tokio::sync::mpsc;
 
 mod claude;
@@ -12,6 +12,9 @@ mod plugins;
 
 use dispatcher::{BotEvent, EventDispatcher};
 use handler::EventHandler;
+
+pub const DEFAULT_PROMPT: &'static str = include_str!("./claude/prompt.txt");
+pub const PROMPT_FILE: &'static str = "./storage/prompt.txt";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -39,7 +42,9 @@ async fn main() -> anyhow::Result<()> {
     .event_handler(dispatcher)
     .await?;
 
-  tokio::spawn(async move { EventHandler::start("./plugins", &claude_key, rx).await });
+  let prompt = fs::read_to_string(PROMPT_FILE).unwrap_or_else(|_| DEFAULT_PROMPT.to_string());
+
+  tokio::spawn(async move { EventHandler::start("./storage", &claude_key, &prompt, rx).await });
 
   client.start().await?;
 
