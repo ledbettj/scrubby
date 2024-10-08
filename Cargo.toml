@@ -17,3 +17,5 @@ rhai = { version = "1.19.0", features = ["serde", "sync"] }
 base64 = "0.22.1"
 image = "0.25.2"
 regex = "1.10.6"
+reqwest-retry = "0.6.1"
+reqwest-middleware = "0.3.3"

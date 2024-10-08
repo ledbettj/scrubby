@@ -1,7 +1,9 @@
 mod api;
 mod content;
 mod error;
+mod retry;
 mod schema;
+
 pub mod util;
 
 pub use api::{Client, Interaction, Model, Response, Role, Tool};

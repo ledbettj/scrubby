@@ -4,13 +4,13 @@ use std::io;
 #[derive(Debug)]
 pub enum Error {
   IoError(io::Error),
-  HttpError(reqwest::Error),
+  HttpError(reqwest_middleware::Error),
   JsonError(serde_json::Error),
   APIError(super::api::APIError),
 }
 
-impl From<reqwest::Error> for Error {
-  fn from(value: reqwest::Error) -> Self {
+impl From<reqwest_middleware::Error> for Error {
+  fn from(value: reqwest_middleware::Error) -> Self {
     Self::HttpError(value)
   }
 }

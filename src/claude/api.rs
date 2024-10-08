@@ -1,6 +1,10 @@
+use super::retry::Retry529;
 use super::Content;
 use super::Schema;
 
+use reqwest_middleware::ClientBuilder;
+use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::RetryTransientMiddleware;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -131,7 +135,17 @@ impl Client {
     };
 
     let body = serde_json::to_string(&payload)?;
-    let client = reqwest::Client::new();
+    let retry_policy = ExponentialBackoff::builder()
+      .base(2)
+      .build_with_max_retries(3);
+
+    let client = ClientBuilder::new(reqwest::Client::new())
+      .with(RetryTransientMiddleware::new_with_policy_and_strategy(
+        retry_policy,
+        Retry529 {},
+      ))
+      .build();
+
     let resp = client
       .post(API_URL)
       .header("Content-Type", "application/json")
@@ -144,11 +158,14 @@ impl Client {
 
     if let Err(err) = resp.error_for_status_ref() {
       if !resp.status().is_client_error() {
-        return Err(super::Error::HttpError(err));
+        return Err(super::Error::HttpError(err.into()));
       }
     }
 
-    let body = resp.text().await?;
+    let body = resp
+      .text()
+      .await
+      .map_err(|e| reqwest_middleware::Error::Reqwest(e))?;
 
     match serde_json::from_str(&body)? {
       Response::Error { error } => Err(error.into()),
