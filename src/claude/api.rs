@@ -103,35 +103,27 @@ const API_URL: &'static str = "https://api.anthropic.com/v1/messages";
 
 pub struct Client {
   api_key: String,
-  prompt: String,
   model: Model,
 }
 
 impl Client {
-  pub fn new<S: Into<String>>(api_key: S, prompt: S, model: Model) -> Self {
+  pub fn new<S: Into<String>>(api_key: S, model: Model) -> Self {
     Self {
       api_key: api_key.into(),
-      prompt: prompt.into(),
       model,
     }
   }
-
-  pub fn set_prompt<S: Into<String>>(&mut self, prompt: S) {
-    self.prompt = prompt.into();
-  }
-
   pub async fn create_message(
     &self,
     messages: &[Interaction],
     host: &crate::plugins::Host,
-    system_prompt: Option<String>,
+    prompt: String,
   ) -> Result<Response, super::Error> {
     let tools: Vec<Tool> = host.tools.iter().map(|t| t.inner.clone()).collect();
-    let system = system_prompt.unwrap_or_else(|| self.prompt.clone());
     let payload = Request {
       model: self.model,
       max_tokens: 1024,
-      system,
+      system: prompt,
       messages: messages.into(),
       tools: &tools,
     };

@@ -1,14 +1,14 @@
 use crate::claude::{Client, Content, ImageSource, Interaction, Response, Role};
 use crate::dispatcher::BotEvent;
 use crate::plugins::Host;
-use crate::{DEFAULT_PROMPT, PROMPT_FILE};
+use crate::storage::Storage;
 use base64::prelude::*;
 use log::{debug, error, info, trace};
 use regex::Regex;
-use serenity::all::{Channel, ChannelId, ChannelType, GuildChannel, GuildId};
+use serenity::all::{Channel, ChannelId, ChannelType, GuildChannel};
 use serenity::prelude::CacheHttp;
 use std::collections::{HashMap, VecDeque};
-use std::fs;
+use std::path::Path;
 use tokio::join;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -21,7 +21,7 @@ impl Into<String> for BotResponse {
   fn into(self) -> String {
     match self {
       BotResponse::Text(s) => s.trim().into(),
-      BotResponse::Error(e) => format!(":skull: Aw shit.\n```\n{}\n```", e.to_string()).into(),
+      BotResponse::Error(e) => format!(":skull: \n```\n{}\n```", e.to_string()).into(),
     }
   }
 }
@@ -30,25 +30,21 @@ pub struct EventHandler {
   host: Host,
   claude: Client,
   history: HashMap<ChannelId, VecDeque<Interaction>>,
-  prompts: HashMap<GuildId, String>,
+  storage: Storage,
 }
 
 impl EventHandler {
-  fn new(plugin_dir: &str, claude_key: &str, prompt: &str) -> Self {
+  fn new(plugin_dir: &str, claude_key: &str) -> Self {
     Self {
       host: Host::new(plugin_dir),
-      claude: Client::new(claude_key, prompt, crate::claude::Model::Sonnet35),
+      claude: Client::new(claude_key, crate::claude::Model::Sonnet35),
       history: HashMap::new(),
-      prompts: HashMap::new(),
+      storage: Storage::new(Path::new(plugin_dir)).unwrap(),
     }
   }
-  pub async fn start(
-    plugin_dir: &str,
-    claude_key: &str,
-    prompt: &str,
-    mut rx: UnboundedReceiver<BotEvent>,
-  ) {
-    let mut handler = Self::new(plugin_dir, claude_key, prompt);
+
+  pub async fn start(plugin_dir: &str, claude_key: &str, mut rx: UnboundedReceiver<BotEvent>) {
+    let mut handler = Self::new(plugin_dir, claude_key);
     if let Err(e) = handler.host.load() {
       error!("Loading plugins: {}", e);
     }
@@ -60,29 +56,13 @@ impl EventHandler {
 
   async fn on_command(&mut self, event: &BotEvent) -> Option<Option<String>> {
     let content = &event.msg.content;
-    let r = Regex::new("(?ms)set-prompt (.*)").expect("Failed to compile regex");
+    let r = Regex::new("(?ms)set-personality (.*)").expect("Failed to compile regex");
 
     if let Some(cap) = r.captures(content) {
-      let prompt = cap.get(1).unwrap().as_str();
+      let tone = cap.get(1).unwrap().as_str();
       if let Some(id) = event.msg.guild_id {
-        info!("Setting {:?} prompt: {}", id, prompt);
-        self.prompts.insert(id, prompt.into());
-      } else {
-        info!("Setting default prompt: {}", prompt);
-        self.claude.set_prompt(prompt);
-        std::fs::write(PROMPT_FILE, prompt).expect("Failed to write prompt to storage");
-      }
-      return Some(None);
-    }
-
-    if content.contains("clear-prompt") {
-      if let Some(id) = event.msg.guild_id {
-        info!("Clearing {:?} prompt", id);
-        self.prompts.remove(&id);
-      } else {
-        info!("Clearing default prompt");
-        self.claude.set_prompt(DEFAULT_PROMPT);
-        std::fs::remove_file(PROMPT_FILE).ok();
+        info!("Setting {:?} personality: {}", id, tone);
+        self.storage.update_personality(id.into(), tone).ok();
       }
       return Some(None);
     }
@@ -93,21 +73,6 @@ impl EventHandler {
       let resp = format!("```\n{}\n```", resp).to_string();
       return Some(Some(resp));
     }
-
-    // let r = Regex::new(r#"install-script\s*(.+)"#).unwrap();
-    // if let Some(cap) = r.captures(content) {
-    //   let url = cap.get(1).unwrap().as_str();
-    //   let url = reqwest::Url::parse(url).unwrap();
-    //   let filename = url.path_segments().unwrap().last().unwrap().to_owned();
-
-    //   if let Ok(resp) = reqwest::get(url).await {
-    //     let text = resp.text().await.unwrap();
-    //     fs::write(format!("./storage/{}", filename), text).ok();
-    //   }
-
-    //   self.host.load().ok();
-    //   return Some(None);
-    // }
 
     None
   }
@@ -171,9 +136,14 @@ impl EventHandler {
     }
 
     let prompt = match event.msg.guild_id {
-      Some(id) => self.prompts.get(&id).cloned(),
+      Some(id) => self
+        .storage
+        .guild_config(id.into())
+        .map(|c| c.system())
+        .ok(),
       None => None,
-    };
+    }
+    .unwrap_or_else(|| "".into());
 
     let replies = match Self::dispatch_llm(&mut history, prompt, &self.claude, &self.host).await {
       Ok(replies) => replies,
@@ -300,7 +270,7 @@ impl EventHandler {
 
   async fn dispatch_llm(
     history: &mut VecDeque<Interaction>,
-    prompt: Option<String>,
+    prompt: String,
     claude: &Client,
     host: &Host,
   ) -> anyhow::Result<Vec<BotResponse>> {
