@@ -124,12 +124,14 @@ impl Client {
     &self,
     messages: &[Interaction],
     host: &crate::plugins::Host,
+    system_prompt: Option<String>,
   ) -> Result<Response, super::Error> {
     let tools: Vec<Tool> = host.tools.iter().map(|t| t.inner.clone()).collect();
+    let system = system_prompt.unwrap_or_else(|| self.prompt.clone());
     let payload = Request {
       model: self.model,
       max_tokens: 1024,
-      system: self.prompt.clone(),
+      system,
       messages: messages.into(),
       tools: &tools,
     };

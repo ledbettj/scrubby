@@ -5,7 +5,7 @@ use crate::{DEFAULT_PROMPT, PROMPT_FILE};
 use base64::prelude::*;
 use log::{debug, error, info, trace};
 use regex::Regex;
-use serenity::all::{Channel, ChannelId, ChannelType, GuildChannel};
+use serenity::all::{Channel, ChannelId, ChannelType, GuildChannel, GuildId};
 use serenity::prelude::CacheHttp;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
@@ -30,6 +30,7 @@ pub struct EventHandler {
   host: Host,
   claude: Client,
   history: HashMap<ChannelId, VecDeque<Interaction>>,
+  prompts: HashMap<GuildId, String>,
 }
 
 impl EventHandler {
@@ -38,6 +39,7 @@ impl EventHandler {
       host: Host::new(plugin_dir),
       claude: Client::new(claude_key, prompt, crate::claude::Model::Sonnet35),
       history: HashMap::new(),
+      prompts: HashMap::new(),
     }
   }
   pub async fn start(
@@ -62,15 +64,26 @@ impl EventHandler {
 
     if let Some(cap) = r.captures(content) {
       let prompt = cap.get(1).unwrap().as_str();
-      info!("Resetting prompt: {}", prompt);
-      self.claude.set_prompt(prompt);
-      std::fs::write(PROMPT_FILE, prompt).expect("Failed to write prompt to storage");
+      if let Some(id) = event.msg.guild_id {
+        info!("Setting {:?} prompt: {}", id, prompt);
+        self.prompts.insert(id, prompt.into());
+      } else {
+        info!("Setting default prompt: {}", prompt);
+        self.claude.set_prompt(prompt);
+        std::fs::write(PROMPT_FILE, prompt).expect("Failed to write prompt to storage");
+      }
       return Some(None);
     }
 
     if content.contains("clear-prompt") {
-      self.claude.set_prompt(DEFAULT_PROMPT);
-      std::fs::remove_file(PROMPT_FILE).ok();
+      if let Some(id) = event.msg.guild_id {
+        info!("Clearing {:?} prompt", id);
+        self.prompts.remove(&id);
+      } else {
+        info!("Clearing default prompt");
+        self.claude.set_prompt(DEFAULT_PROMPT);
+        std::fs::remove_file(PROMPT_FILE).ok();
+      }
       return Some(None);
     }
 
@@ -81,20 +94,20 @@ impl EventHandler {
       return Some(Some(resp));
     }
 
-    let r = Regex::new(r#"install-script\s*(.+)"#).unwrap();
-    if let Some(cap) = r.captures(content) {
-      let url = cap.get(1).unwrap().as_str();
-      let url = reqwest::Url::parse(url).unwrap();
-      let filename = url.path_segments().unwrap().last().unwrap().to_owned();
+    // let r = Regex::new(r#"install-script\s*(.+)"#).unwrap();
+    // if let Some(cap) = r.captures(content) {
+    //   let url = cap.get(1).unwrap().as_str();
+    //   let url = reqwest::Url::parse(url).unwrap();
+    //   let filename = url.path_segments().unwrap().last().unwrap().to_owned();
 
-      if let Ok(resp) = reqwest::get(url).await {
-        let text = resp.text().await.unwrap();
-        fs::write(format!("./storage/{}", filename), text).ok();
-      }
+    //   if let Ok(resp) = reqwest::get(url).await {
+    //     let text = resp.text().await.unwrap();
+    //     fs::write(format!("./storage/{}", filename), text).ok();
+    //   }
 
-      self.host.load().ok();
-      return Some(None);
-    }
+    //   self.host.load().ok();
+    //   return Some(None);
+    // }
 
     None
   }
@@ -157,7 +170,12 @@ impl EventHandler {
       };
     }
 
-    let replies = match Self::dispatch_llm(&mut history, &self.claude, &self.host).await {
+    let prompt = match event.msg.guild_id {
+      Some(id) => self.prompts.get(&id).cloned(),
+      None => None,
+    };
+
+    let replies = match Self::dispatch_llm(&mut history, prompt, &self.claude, &self.host).await {
       Ok(replies) => replies,
       Err(e) => {
         error!("{}", e);
@@ -282,6 +300,7 @@ impl EventHandler {
 
   async fn dispatch_llm(
     history: &mut VecDeque<Interaction>,
+    prompt: Option<String>,
     claude: &Client,
     host: &Host,
   ) -> anyhow::Result<Vec<BotResponse>> {
@@ -304,7 +323,7 @@ impl EventHandler {
       );
 
       let resp = claude
-        .create_message(&history.make_contiguous(), host)
+        .create_message(&history.make_contiguous(), host, prompt.clone())
         .await;
       debug!("Claude Returned: {:?}", resp);
 
