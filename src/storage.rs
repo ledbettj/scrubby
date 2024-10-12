@@ -1,4 +1,5 @@
 use handlebars::Handlebars;
+use log::info;
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde_json;
 use std::collections::HashMap;
@@ -50,6 +51,18 @@ impl Storage {
 
     storage.ensure()?;
     Ok(storage)
+  }
+
+  pub fn ensure_config(&self, id: u64) {
+    info!("Ensuring guild {:?} exists", id);
+
+    self
+      .conn
+      .execute(
+        "INSERT INTO guild_config (guild_id, config) VALUES ( ?1, '{}') ON CONFLICT DO NOTHING",
+        [id],
+      )
+      .ok();
   }
 
   pub fn update_personality(&self, id: u64, personality: &str) -> SqlResult<()> {

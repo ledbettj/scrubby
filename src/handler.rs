@@ -1,5 +1,5 @@
 use crate::claude::{Client, Content, ImageSource, Interaction, Response, Role};
-use crate::dispatcher::BotEvent;
+use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent};
 use crate::plugins::Host;
 use crate::storage::Storage;
 use base64::prelude::*;
@@ -54,7 +54,7 @@ impl EventHandler {
     }
   }
 
-  async fn on_command(&mut self, event: &BotEvent) -> Option<Option<String>> {
+  async fn on_command(&mut self, event: &MsgEvent) -> Option<Option<String>> {
     let content = &event.msg.content;
     let r = Regex::new("(?ms)set-personality (.*)").expect("Failed to compile regex");
 
@@ -78,6 +78,20 @@ impl EventHandler {
   }
 
   async fn on_event(&mut self, event: &BotEvent) {
+    match event {
+      BotEvent::Message(m) => self.on_message(m).await,
+      BotEvent::Ready(r) => self.on_ready(r),
+    }
+  }
+
+  fn on_ready(&self, event: &ReadyEvent) {
+    event
+      .guilds
+      .iter()
+      .for_each(|&guild_id| self.storage.ensure_config(guild_id.into()));
+  }
+
+  async fn on_message(&mut self, event: &MsgEvent) {
     let (is_respondable, msg_content) = join!(
       Self::event_is_respondable(event),
       Self::msg_to_content(event)
@@ -173,7 +187,7 @@ impl EventHandler {
     }
   }
 
-  async fn event_is_respondable(event: &BotEvent) -> bool {
+  async fn event_is_respondable(event: &MsgEvent) -> bool {
     // dont respond to your own messages
     if event.msg.author.id == event.ctx.cache.current_user().id {
       return false;
@@ -208,7 +222,7 @@ impl EventHandler {
     }
   }
 
-  async fn msg_to_content(event: &BotEvent) -> Vec<Content> {
+  async fn msg_to_content(event: &MsgEvent) -> Vec<Content> {
     let mut items = vec![];
     let text = event
       .msg
