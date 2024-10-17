@@ -2,7 +2,7 @@ use dotenv;
 use env_logger::Builder;
 use log::warn;
 use serenity::prelude::*;
-use std::{env, fs};
+use std::env;
 use tokio::sync::mpsc;
 
 mod claude;

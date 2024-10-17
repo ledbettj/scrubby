@@ -31,6 +31,7 @@ pub struct EventHandler {
   claude: Client,
   history: HashMap<ChannelId, VecDeque<Interaction>>,
   storage: Storage,
+  cmd_regex: Regex,
 }
 
 impl EventHandler {
@@ -40,6 +41,7 @@ impl EventHandler {
       claude: Client::new(claude_key, crate::claude::Model::Sonnet35),
       history: HashMap::new(),
       storage: Storage::new(Path::new(plugin_dir)).unwrap(),
+      cmd_regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
     }
   }
 
@@ -56,13 +58,13 @@ impl EventHandler {
 
   async fn on_command(&mut self, event: &MsgEvent) -> Option<Option<String>> {
     let content = &event.msg.content;
-    let r = Regex::new("(?ms)set-personality (.*)").expect("Failed to compile regex");
 
-    if let Some(cap) = r.captures(content) {
-      let tone = cap.get(1).unwrap().as_str();
+    if let Some(cap) = self.cmd_regex.captures(content) {
+      let key = cap.get(1).unwrap().as_str().to_lowercase();
+      let val = cap.get(2).unwrap().as_str().trim();
       if let Some(id) = event.msg.guild_id {
-        info!("Setting {:?} personality: {}", id, tone);
-        self.storage.update_personality(id.into(), tone).ok();
+        info!("Setting {:?} {} = {}", id, key, val);
+        self.storage.update_config(id.into(), &key, val).ok();
       }
       return Some(None);
     }
@@ -137,6 +139,7 @@ impl EventHandler {
       return;
     }
 
+    // send a typing indicator to the channel.
     if let Ok(c) = event.msg.channel(&event.ctx).await {
       match c {
         Channel::Guild(ch) => {
@@ -149,15 +152,16 @@ impl EventHandler {
       };
     }
 
-    let prompt = match event.msg.guild_id {
-      Some(id) => self
-        .storage
-        .guild_config(id.into())
-        .map(|c| c.system())
-        .ok(),
-      None => None,
-    }
-    .unwrap_or_else(|| "".into());
+    // events in a channel or thread will have a GuildId. direct messages will not.
+    // in that case, fall back to guild ID = 0 which is the global fallback configuration.
+    let guild_id = event.msg.guild_id.map(|id| id.into()).unwrap_or(0u64);
+
+    // we should always get a config back here, unless an SQL error occurs.
+    let prompt = self
+      .storage
+      .guild_config(guild_id)
+      .map(|cfg| cfg.system())
+      .unwrap_or_else(|_| "".into());
 
     let replies = match Self::dispatch_llm(&mut history, prompt, &self.claude, &self.host).await {
       Ok(replies) => replies,

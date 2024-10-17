@@ -7,6 +7,8 @@ use std::path::Path;
 
 use crate::PROMPT_TEMPLATE;
 
+const DEFAULT_PERSONALITY: &'static str = "friendly and enthusiastic. Feel free to use some good-natured insults or jabs. You can use some emoji sparingly";
+
 #[derive(Debug)]
 pub struct GuildConfig {
   id: u64,
@@ -19,11 +21,7 @@ impl GuildConfig {
     let mut tmpl = Handlebars::new();
     let mut map = HashMap::new();
 
-    // default template values.
-    map.insert(
-      "personality".to_owned(),
-      "friendly and enthusiastic. Feel free to use some good-natured insults or jabs. You can use some emoji sparingly"
-    );
+    map.insert("personality".to_owned(), DEFAULT_PERSONALITY);
 
     tmpl
       .register_template_string("prompt", PROMPT_TEMPLATE)
@@ -65,10 +63,12 @@ impl Storage {
       .ok();
   }
 
-  pub fn update_personality(&self, id: u64, personality: &str) -> SqlResult<()> {
+  pub fn update_config(&self, id: u64, key: &str, val: &str) -> SqlResult<()> {
+    let key = format!("$.{}", key);
+    self.ensure_config(id);
     self.conn.execute(
-      "UPDATE guild_config SET config = json_set(COALESCE(config, '{}'), '$.personality', ?1) WHERE guild_id = ?2",
-      params![personality, id],
+      "UPDATE guild_config SET config = json_set(COALESCE(config, '{}'), ?1, ?2) WHERE guild_id = ?3",
+      params![key, val, id],
     )?;
 
     Ok(())
@@ -111,6 +111,8 @@ impl Storage {
       "CREATE UNIQUE INDEX IF NOT EXISTS guild_config_on_guild_id ON guild_config (guild_id)",
       (),
     )?;
+
+    self.ensure_config(0);
 
     Ok(())
   }
