@@ -278,6 +278,19 @@ impl EventHandler {
             }
           }
         }
+        Some(t) if t.contains("charset=utf-8") => {
+          if let Ok(bytes) = attachment.download().await {
+            match String::from_utf8(bytes) {
+              Err(e) => error!("Failed to decode text attachment: {}", e),
+              Ok(s) => items.push(Content::Text {
+                text: format!(
+                  "<document name=\"{}\">\n{}</document>",
+                  attachment.filename, s
+                ),
+              }),
+            }
+          }
+        }
         Some(t) => debug!("Unhandled attachment content type: {}", t),
         None => {}
       }
