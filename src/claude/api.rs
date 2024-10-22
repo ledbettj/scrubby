@@ -1,4 +1,4 @@
-use super::retry::Retry529;
+use super::retry::Retry5xx;
 use super::Content;
 use super::Schema;
 
@@ -21,7 +21,7 @@ pub enum Model {
   Haiku,
   #[serde(rename = "claude-3-sonnet-20240229")]
   Sonnet,
-  #[serde(rename = "claude-3-5-sonnet-20240620")]
+  #[serde(rename = "claude-3-5-sonnet-latest")]
   Sonnet35,
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -136,7 +136,7 @@ impl Client {
     let client = ClientBuilder::new(reqwest::Client::new())
       .with(RetryTransientMiddleware::new_with_policy_and_strategy(
         retry_policy,
-        Retry529 {},
+        Retry5xx {},
       ))
       .build();
 
