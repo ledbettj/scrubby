@@ -1,6 +1,6 @@
 use log::{debug, info};
 use serenity::{
-  all::GuildId,
+  all::{GuildChannel, GuildId},
   async_trait,
   model::{channel::Message, gateway::Ready},
   prelude::*,
@@ -20,9 +20,17 @@ pub struct ReadyEvent {
 }
 
 #[derive(Debug)]
+pub struct ThreadUpdateEvent {
+  pub ctx: Context,
+  pub old: Option<GuildChannel>,
+  pub new: GuildChannel,
+}
+
+#[derive(Debug)]
 pub enum BotEvent {
   Message(MsgEvent),
   Ready(ReadyEvent),
+  ThreadUpdate(ThreadUpdateEvent),
 }
 
 pub struct EventDispatcher {
@@ -47,6 +55,14 @@ impl EventHandler for EventDispatcher {
       .tx
       .send(event)
       .expect("Failed to write ready content to channel");
+  }
+
+  async fn thread_update(&self, ctx: Context, old: Option<GuildChannel>, new: GuildChannel) {
+    let event = BotEvent::ThreadUpdate(ThreadUpdateEvent { ctx, old, new });
+    self
+      .tx
+      .send(event)
+      .expect("Failed to write thread update to channel");
   }
 
   async fn message(&self, ctx: Context, msg: Message) {

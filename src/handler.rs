@@ -1,5 +1,5 @@
 use crate::claude::{Client, Content, ImageSource, Interaction, Response, Role};
-use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent};
+use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent, ThreadUpdateEvent};
 use crate::plugins::Host;
 use crate::storage::Storage;
 use base64::prelude::*;
@@ -83,6 +83,15 @@ impl EventHandler {
     match event {
       BotEvent::Message(m) => self.on_message(m).await,
       BotEvent::Ready(r) => self.on_ready(r),
+      BotEvent::ThreadUpdate(t) => self.on_thread_update(t),
+    }
+  }
+
+  fn on_thread_update(&mut self, event: &ThreadUpdateEvent) {
+    if let Some(metadata) = event.new.thread_metadata {
+      if metadata.archived {
+        self.history.remove(&event.new.id);
+      }
     }
   }
 
