@@ -5,6 +5,7 @@ use serenity::prelude::*;
 use std::env;
 use tokio::sync::mpsc;
 
+mod channel;
 mod claude;
 mod dispatcher;
 mod handler;

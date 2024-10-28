@@ -1,3 +1,4 @@
+use crate::channel::Channel;
 use crate::claude::{Client, Content, ImageSource, Interaction, Response, Role};
 use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent, ThreadUpdateEvent};
 use crate::plugins::Host;
@@ -5,7 +6,7 @@ use crate::storage::Storage;
 use base64::prelude::*;
 use log::{debug, error, info, trace};
 use regex::Regex;
-use serenity::all::{Channel, ChannelId, ChannelType, GuildChannel};
+use serenity::all::{Channel as DChannel, ChannelId, ChannelType, GuildChannel, MessageType};
 use serenity::prelude::CacheHttp;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
@@ -29,7 +30,7 @@ impl Into<String> for BotResponse {
 pub struct EventHandler {
   host: Host,
   claude: Client,
-  history: HashMap<ChannelId, VecDeque<Interaction>>,
+  channels: HashMap<ChannelId, Channel>,
   storage: Storage,
   cmd_regex: Regex,
 }
@@ -39,7 +40,7 @@ impl EventHandler {
     Self {
       host: Host::new(plugin_dir),
       claude: Client::new(claude_key, crate::claude::Model::Sonnet35),
-      history: HashMap::new(),
+      channels: HashMap::new(),
       storage: Storage::new(Path::new(plugin_dir)).unwrap(),
       cmd_regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
     }
@@ -90,7 +91,7 @@ impl EventHandler {
   fn on_thread_update(&mut self, event: &ThreadUpdateEvent) {
     if let Some(metadata) = event.new.thread_metadata {
       if metadata.archived {
-        self.history.remove(&event.new.id);
+        self.channels.remove(&event.new.id);
       }
     }
   }
@@ -122,27 +123,18 @@ impl EventHandler {
       }
     }
 
-    let mut history = self.history.entry(event.msg.channel_id).or_default();
-    Self::ensure_valid_history(&mut history);
+    let limit = match event.msg.kind {
+      MessageType::ThreadCreated => None,
+      _ => Some(10),
+    };
+    let id = event.msg.channel_id;
+    let mut channel = self
+      .channels
+      .entry(id)
+      .or_insert_with(|| Channel::new(id, limit));
 
-    match history.back_mut() {
-      None
-      | Some(Interaction {
-        role: Role::Assistant,
-        ..
-      }) => {
-        history.push_back(Interaction {
-          role: Role::User,
-          content: msg_content,
-        });
-      }
-      Some(Interaction {
-        role: Role::User,
-        ref mut content,
-      }) => {
-        content.extend(msg_content);
-      }
-    }
+    channel.ensure_valid_history();
+    channel.append_user(msg_content);
 
     if !is_respondable {
       return;
@@ -151,10 +143,10 @@ impl EventHandler {
     // send a typing indicator to the channel.
     if let Ok(c) = event.msg.channel(&event.ctx).await {
       match c {
-        Channel::Guild(ch) => {
+        DChannel::Guild(ch) => {
           let _ = ch.broadcast_typing(&event.ctx.http).await;
         }
-        Channel::Private(ch) => {
+        DChannel::Private(ch) => {
           let _ = ch.broadcast_typing(&event.ctx.http).await;
         }
         _ => {}
@@ -172,20 +164,21 @@ impl EventHandler {
       .map(|cfg| cfg.system())
       .unwrap_or_else(|_| "".into());
 
-    let replies = match Self::dispatch_llm(&mut history, prompt, &self.claude, &self.host).await {
+    let replies = match Self::dispatch_llm(&mut channel, prompt, &self.claude, &self.host).await {
       Ok(replies) => replies,
       Err(e) => {
         error!("{}", e);
 
-        history.iter().for_each(|item| trace!("{:?}", item));
+        channel
+          .get_history()
+          .iter()
+          .for_each(|item| trace!("{:?}", item));
 
         vec![BotResponse::Error(e)]
       }
     };
 
-    while history.len() > 10 {
-      history.drain(..2);
-    }
+    channel.shrink();
 
     for r in replies.into_iter() {
       let s: String = r.into();
@@ -218,7 +211,7 @@ impl EventHandler {
 
     // respond if it's a thread we're involved in.
     let channel = event.msg.channel(event.ctx.http()).await;
-    if let Ok(Channel::Guild(GuildChannel {
+    if let Ok(DChannel::Guild(GuildChannel {
       kind: ChannelType::PublicThread,
       member: Some(_),
       ..
@@ -309,7 +302,7 @@ impl EventHandler {
   }
 
   async fn dispatch_llm(
-    history: &mut VecDeque<Interaction>,
+    channel: &mut Channel,
     prompt: String,
     claude: &Client,
     host: &Host,
@@ -318,28 +311,21 @@ impl EventHandler {
 
     let mut done = false;
 
-    let last = history.back_mut().expect("No interactions to consider!?");
-    let len = last.content.len();
-    if len > 10 {
-      last.content = last.content[(len - 10)..].to_vec();
-    }
-
     while !done {
+      let history = channel.get_history();
       done = true;
       debug!(
         "Claude Considering: {:?} with {} prior messages",
-        history.back().unwrap(),
+        history.last().unwrap(),
         history.len() - 1
       );
 
-      let resp = claude
-        .create_message(&history.make_contiguous(), host, prompt.clone())
-        .await;
+      let resp = claude.create_message(&history, host, prompt.clone()).await;
       debug!("Claude Returned: {:?}", resp);
 
       match resp {
         Ok(Response::Message { content, .. }) => {
-          history.push_back(Interaction {
+          channel.append_bot(Interaction {
             role: Role::Assistant,
             content: content.clone(),
           });
@@ -378,7 +364,7 @@ impl EventHandler {
             }
           }
           if !tool_output.is_empty() {
-            history.push_back(Interaction {
+            channel.append_bot(Interaction {
               role: Role::User,
               content: tool_output,
             });
@@ -387,7 +373,7 @@ impl EventHandler {
         Ok(Response::Error { .. }) => unreachable!(),
         Err(e) => {
           // remove the offending user message
-          history.pop_back();
+          channel.undo_last();
           let _ = Err(e)?;
         }
       }
