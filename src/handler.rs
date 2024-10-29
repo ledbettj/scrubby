@@ -91,6 +91,7 @@ impl EventHandler {
   fn on_thread_update(&mut self, event: &ThreadUpdateEvent) {
     if let Some(metadata) = event.new.thread_metadata {
       if metadata.archived {
+        debug!("Cleaning up channel {:?}", event.new.id);
         self.channels.remove(&event.new.id);
       }
     }
@@ -123,11 +124,18 @@ impl EventHandler {
       }
     }
 
-    let limit = match event.msg.kind {
-      MessageType::ThreadCreated => None,
+    let id = event.msg.channel_id;
+    let limit = match event
+      .msg
+      .channel(event.ctx.http())
+      .await
+      .ok()
+      .and_then(|ch| ch.guild())
+      .map(|gc| gc.kind)
+    {
+      Some(ChannelType::PublicThread) => None,
       _ => Some(10),
     };
-    let id = event.msg.channel_id;
     let mut channel = self
       .channels
       .entry(id)
