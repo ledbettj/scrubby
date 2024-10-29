@@ -8,7 +8,7 @@ use log::{debug, error, info, trace};
 use regex::Regex;
 use serenity::all::{Channel as DChannel, ChannelId, ChannelType, GuildChannel, MessageType};
 use serenity::prelude::CacheHttp;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::path::Path;
 use tokio::join;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -385,28 +385,5 @@ impl EventHandler {
         .map(|text| BotResponse::Text(text))
         .collect(),
     )
-  }
-
-  fn ensure_valid_history(history: &mut VecDeque<Interaction>) {
-    loop {
-      match history.front() {
-        None => break,
-        Some(Interaction {
-          role: Role::Assistant,
-          ..
-        }) => {
-          history.pop_front();
-        }
-        Some(Interaction {
-          role: Role::User,
-          content,
-        }) => match content.first() {
-          None | Some(Content::ToolResult { .. }) => {
-            history.pop_front();
-          }
-          _ => break,
-        },
-      };
-    }
   }
 }

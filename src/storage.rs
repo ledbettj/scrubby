@@ -9,6 +9,7 @@ use crate::PROMPT_TEMPLATE;
 
 const DEFAULT_PERSONALITY: &'static str = "friendly and enthusiastic. Feel free to use some good-natured insults or jabs. You can use some emoji sparingly";
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct GuildConfig {
   id: u64,
