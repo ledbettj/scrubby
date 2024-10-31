@@ -70,13 +70,6 @@ impl EventHandler {
       return Some(None);
     }
 
-    let r = Regex::new(r#"(?ms)eval-script\s*```(.+)```"#).unwrap();
-    if let Some(cap) = r.captures(content) {
-      let resp = self.host.eval(cap.get(1).unwrap().as_str());
-      let resp = format!("```\n{}\n```", resp).to_string();
-      return Some(Some(resp));
-    }
-
     None
   }
 
@@ -172,7 +165,8 @@ impl EventHandler {
       .map(|cfg| cfg.system())
       .unwrap_or_else(|_| "".into());
 
-    let replies = match Self::dispatch_llm(&mut channel, prompt, &self.claude, &self.host).await {
+    let replies = match Self::dispatch_llm(&mut channel, prompt, &self.claude, &mut self.host).await
+    {
       Ok(replies) => replies,
       Err(e) => {
         error!("{}", e);
@@ -313,7 +307,7 @@ impl EventHandler {
     channel: &mut Channel,
     prompt: String,
     claude: &Client,
-    host: &Host,
+    host: &mut Host,
   ) -> anyhow::Result<Vec<BotResponse>> {
     let mut output = vec![];
 
@@ -328,7 +322,7 @@ impl EventHandler {
         history.len() - 1
       );
 
-      let resp = claude.create_message(&history, host, prompt.clone()).await;
+      let resp = claude.create_message(&history, &host, prompt.clone()).await;
       debug!("Claude Returned: {:?}", resp);
 
       match resp {

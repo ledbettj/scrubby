@@ -1,145 +1,66 @@
-use std::collections::HashMap;
-
-use log::info;
-use rhai::{
-  module_resolvers::{FileModuleResolver, ModuleResolversCollection, StaticModuleResolver},
-  CustomType, Dynamic, Engine, FnPtr, FuncRegistration, Module, Position, TypeBuilder, AST,
-};
-
-use crate::claude::Schema;
+use crate::claude::Tool;
+use anyhow::anyhow;
+use extism::{convert::Json, Manifest, Plugin, PluginBuilder, Wasm};
+use log::{error, info};
 
 #[derive(Debug)]
 pub struct Host {
   path: String,
-  engine: Engine,
-  pub plugins: Vec<Plugin>,
-  pub tools: Vec<Tool>,
+  pub plugins: Vec<(Plugin, Vec<Tool>)>,
 }
 
 impl Host {
   pub fn invoke_tool(
-    &self,
+    &mut self,
     name: &str,
-    input: HashMap<String, String>,
+    input: serde_json::Value,
   ) -> anyhow::Result<Option<String>> {
-    let tool = self
-      .tools
-      .iter()
-      .find(|t| t.inner.name == name)
-      .ok_or(anyhow::Error::msg("No tool found"))?;
-
-    let input: rhai::Map = input
-      .into_iter()
-      .map(|(k, v)| (k.into(), v.into()))
-      .collect();
-    let s: String = tool.func.call(&self.engine, &AST::empty(), (input,))?;
-    Ok(Some(s))
-  }
-
-  pub fn eval<S: AsRef<str>>(&self, input: S) -> String {
-    match self.engine.eval::<Dynamic>(input.as_ref()) {
-      Err(e) => e.to_string(),
-      Ok(d) => format!("{}", d).to_string(),
+    if let Some((p, _t)) = self
+      .plugins
+      .iter_mut()
+      .find(|(_, tools)| tools.iter().any(|t| t.name == name))
+    {
+      match p.call::<&str, &str>(name, &serde_json::to_string(&input).unwrap()) {
+        Ok(s) => Ok(Some(s.to_owned())),
+        Err(e) => Err(e),
+      }
+    } else {
+      Err(anyhow!("No matching tool found"))
     }
   }
 
   pub fn new<S: Into<String> + AsRef<str>>(path: S) -> Self {
-    let mut engine = Engine::new();
-    let mut bot = Module::new();
-
-    FuncRegistration::new("plugin").set_into_module(&mut bot, |name: &str| Plugin {
-      name: name.into(),
-      tools: HashMap::new(),
-    });
-
-    let mut static_resolver = StaticModuleResolver::new();
-    static_resolver.insert("bot", bot);
-
-    let file_resolver = FileModuleResolver::new_with_path(path.as_ref());
-    let mut resolver = ModuleResolversCollection::new();
-
-    resolver.push(static_resolver);
-    resolver.push(file_resolver);
-
-    engine.build_type::<Plugin>();
-    engine.register_fn("tool", Plugin::tool);
-    engine.register_type_with_name::<Schema>("Schema");
-    engine.set_module_resolver(resolver);
-
-    engine.set_max_strings_interned(1024);
-
-    engine.on_progress(|ops| {
-      if ops > 10_000 {
-        Some("Evaluation killed due to timeout.".into())
-      } else {
-        None
-      }
-    });
-
     Self {
-      engine,
       plugins: vec![],
       path: path.into(),
-      tools: vec![],
     }
   }
 
   pub fn load(&mut self) -> Result<(), anyhow::Error> {
-    let resolver = self.engine.module_resolver();
+    self.plugins.clear();
 
     for entry in std::fs::read_dir(&self.path)? {
       let entry = entry?;
       let path = entry.path();
-      if let Some("rhai") = path.extension().and_then(|os| os.to_str()) {
-        if let Some(file_name) = path.file_stem().and_then(|os| os.to_str()) {
-          info!("importing {}", file_name);
-          let plug = resolver
-            .resolve(&self.engine, None, file_name, Position::NONE)
-            .map_err(|e| anyhow::Error::msg(e.to_string()))?;
+      if let Some("wasm") = path.extension().and_then(|os| os.to_str()) {
+        info!("Loading plugin from {:?}", path);
 
-          let plugins: Vec<Plugin> = plug
-            .iter_var()
-            .filter_map(|(_, obj)| obj.clone().try_cast::<Plugin>())
-            .collect();
-
-          self.plugins.extend(plugins);
-        }
+        let wasm = Wasm::file(&path);
+        let manifest = Manifest::new([wasm]);
+        let mut plugin = PluginBuilder::new(manifest)
+          .with_wasi(true)
+          .build()
+          .unwrap();
+        match plugin.call::<(), Json<Vec<Tool>>>("getTools", ()) {
+          Ok(Json(tools)) => {
+            info!("Loaded!");
+            self.plugins.push((plugin, tools));
+          }
+          Err(e) => error!("Error loading {:?}: {}", path, e),
+        };
       }
     }
 
-    self.tools = self
-      .plugins
-      .iter()
-      .flat_map(|plugin| plugin.tools.values().cloned())
-      .collect::<Vec<Tool>>();
-
     Ok(())
-  }
-}
-
-#[derive(Debug, Clone, CustomType)]
-pub struct Plugin {
-  pub name: String,
-  pub tools: HashMap<String, Tool>,
-}
-
-#[derive(Debug, Clone, CustomType)]
-pub struct Tool {
-  pub func: FnPtr,
-  pub inner: crate::claude::Tool,
-}
-
-impl Plugin {
-  fn tool(&mut self, name: &str, description: &str, schema: Dynamic, callback: FnPtr) {
-    let input_schema = rhai::serde::from_dynamic::<Schema>(&schema).unwrap();
-    let t = Tool {
-      inner: crate::claude::Tool {
-        name: name.into(),
-        description: description.into(),
-        input_schema,
-      },
-      func: callback,
-    };
-    self.tools.insert(name.into(), t);
   }
 }

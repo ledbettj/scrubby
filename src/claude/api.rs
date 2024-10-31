@@ -119,7 +119,12 @@ impl Client {
     host: &crate::plugins::Host,
     prompt: String,
   ) -> Result<Response, super::Error> {
-    let tools: Vec<Tool> = host.tools.iter().map(|t| t.inner.clone()).collect();
+    let mut tools = vec![];
+    host
+      .plugins
+      .iter()
+      .for_each(|(_, t)| tools.extend_from_slice(&t));
+
     let payload = Request {
       model: self.model,
       max_tokens: 1024,

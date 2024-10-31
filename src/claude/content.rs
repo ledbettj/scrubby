@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
@@ -19,7 +18,7 @@ pub enum Content {
   ToolUse {
     id: String,
     name: String,
-    input: HashMap<String, String>,
+    input: serde_json::Value,
   },
 }
 
