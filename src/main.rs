@@ -9,7 +9,6 @@ mod channel;
 mod claude;
 mod dispatcher;
 mod handler;
-mod plugins;
 mod storage;
 
 use dispatcher::{BotEvent, EventDispatcher};

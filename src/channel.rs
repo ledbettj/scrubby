@@ -39,6 +39,13 @@ impl Channel {
     self.history.make_contiguous()
   }
 
+  pub fn history_has_images(&self) -> bool {
+    self
+      .history
+      .iter()
+      .any(|interaction| interaction.content.iter().any(|content| content.is_image()))
+  }
+
   pub fn append_bot(&mut self, interaction: Interaction) {
     self.history.push_back(interaction);
   }

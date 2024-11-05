@@ -28,3 +28,12 @@ pub enum Content {
 pub enum ImageSource {
   Base64 { media_type: String, data: String },
 }
+
+impl Content {
+  pub fn is_image(&self) -> bool {
+    match self {
+      Self::Image { .. } => true,
+      _ => false,
+    }
+  }
+}

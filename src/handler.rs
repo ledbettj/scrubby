@@ -1,7 +1,7 @@
 use crate::channel::Channel;
-use crate::claude::{Client, Content, ImageSource, Interaction, Response, Role};
+use crate::claude::tools::ToolCollection;
+use crate::claude::{self, Client, Content, ImageSource, Interaction, Model, Response, Role};
 use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent, ThreadUpdateEvent};
-use crate::plugins::Host;
 use crate::storage::Storage;
 use base64::prelude::*;
 use log::{debug, error, info, trace};
@@ -28,29 +28,26 @@ impl Into<String> for BotResponse {
 }
 
 pub struct EventHandler {
-  host: Host,
   claude: Client,
   channels: HashMap<ChannelId, Channel>,
   storage: Storage,
   cmd_regex: Regex,
+  tools: ToolCollection,
 }
 
 impl EventHandler {
-  fn new(plugin_dir: &str, claude_key: &str) -> Self {
+  fn new(storage_dir: &str, claude_key: &str) -> Self {
     Self {
-      host: Host::new(plugin_dir),
-      claude: Client::new(claude_key, crate::claude::Model::Sonnet35),
+      claude: Client::new(claude_key, crate::claude::Model::Haiku35),
       channels: HashMap::new(),
-      storage: Storage::new(Path::new(plugin_dir)).unwrap(),
+      storage: Storage::new(Path::new(storage_dir)).unwrap(),
       cmd_regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
+      tools: vec![Box::new(crate::claude::tools::FetchTool::new())],
     }
   }
 
-  pub async fn start(plugin_dir: &str, claude_key: &str, mut rx: UnboundedReceiver<BotEvent>) {
-    let mut handler = Self::new(plugin_dir, claude_key);
-    if let Err(e) = handler.host.load() {
-      error!("Loading plugins: {}", e);
-    }
+  pub async fn start(storage_dir: &str, claude_key: &str, mut rx: UnboundedReceiver<BotEvent>) {
+    let mut handler = Self::new(storage_dir, claude_key);
 
     while let Some(event) = rx.recv().await {
       handler.on_event(&event).await;
@@ -165,20 +162,20 @@ impl EventHandler {
       .map(|cfg| cfg.system())
       .unwrap_or_else(|_| "".into());
 
-    let replies = match Self::dispatch_llm(&mut channel, prompt, &self.claude, &mut self.host).await
-    {
-      Ok(replies) => replies,
-      Err(e) => {
-        error!("{}", e);
+    let replies =
+      match Self::dispatch_llm(&mut channel, prompt, &mut self.tools, &self.claude).await {
+        Ok(replies) => replies,
+        Err(e) => {
+          error!("{}", e);
 
-        channel
-          .get_history()
-          .iter()
-          .for_each(|item| trace!("{:?}", item));
+          channel
+            .get_history()
+            .iter()
+            .for_each(|item| trace!("{:?}", item));
 
-        vec![BotResponse::Error(e)]
-      }
-    };
+          vec![BotResponse::Error(e)]
+        }
+      };
 
     channel.shrink();
 
@@ -306,14 +303,19 @@ impl EventHandler {
   async fn dispatch_llm(
     channel: &mut Channel,
     prompt: String,
+    mut tools: &mut ToolCollection,
     claude: &Client,
-    host: &mut Host,
   ) -> anyhow::Result<Vec<BotResponse>> {
     let mut output = vec![];
 
     let mut done = false;
 
     while !done {
+      let model = if channel.history_has_images() {
+        None
+      } else {
+        Some(Model::Haiku35)
+      };
       let history = channel.get_history();
       done = true;
       debug!(
@@ -322,7 +324,14 @@ impl EventHandler {
         history.len() - 1
       );
 
-      let resp = claude.create_message(&history, &host, prompt.clone()).await;
+      let tool_meta = tools
+        .iter()
+        .map(|t| t.metadata())
+        .cloned()
+        .collect::<Vec<_>>();
+      let resp = claude
+        .create_message(model, &history, &tool_meta, prompt.clone())
+        .await;
       debug!("Claude Returned: {:?}", resp);
 
       match resp {
@@ -342,7 +351,8 @@ impl EventHandler {
               Content::ToolUse { id, name, input } => {
                 done = false;
 
-                let tool_content = match host.invoke_tool(&name, input) {
+                let tool_content = match crate::claude::tools::invoke_tool(&mut tools, &name, input)
+                {
                   Err(e) => Content::ToolResult {
                     tool_use_id: id,
                     content: e.to_string(),

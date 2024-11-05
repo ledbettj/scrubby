@@ -1,4 +1,5 @@
 use super::retry::Retry5xx;
+use super::tools::ToolCollection;
 use super::Content;
 use super::Schema;
 
@@ -23,6 +24,8 @@ pub enum Model {
   Sonnet,
   #[serde(rename = "claude-3-5-sonnet-latest")]
   Sonnet35,
+  #[serde(rename = "claude-3-5-haiku-latest")]
+  Haiku35,
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Interaction {
@@ -115,22 +118,17 @@ impl Client {
   }
   pub async fn create_message(
     &self,
+    model_override: Option<Model>,
     messages: &[Interaction],
-    host: &crate::plugins::Host,
+    tools: &[Tool],
     prompt: String,
   ) -> Result<Response, super::Error> {
-    let mut tools = vec![];
-    host
-      .plugins
-      .iter()
-      .for_each(|(_, t)| tools.extend_from_slice(&t));
-
     let payload = Request {
-      model: self.model,
+      model: model_override.unwrap_or(self.model),
       max_tokens: 1024,
       system: prompt,
       messages: messages.into(),
-      tools: &tools,
+      tools,
     };
 
     let body = serde_json::to_string(&payload)?;

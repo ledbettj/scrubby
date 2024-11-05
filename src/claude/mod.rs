@@ -4,6 +4,7 @@ mod error;
 mod retry;
 mod schema;
 
+pub mod tools;
 pub mod util;
 
 pub use api::{Client, Interaction, Model, Response, Role, Tool};

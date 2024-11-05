@@ -20,4 +20,5 @@ reqwest-retry = "0.6.1"
 reqwest-middleware = "0.3.3"
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
 handlebars = "6.1.0"
-extism = "1.8.0"
+ureq = "2.10.1"
+scraper = "0.21.0"
