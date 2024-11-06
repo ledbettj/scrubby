@@ -38,7 +38,7 @@ pub struct EventHandler {
 impl EventHandler {
   fn new(storage_dir: &str, claude_key: &str) -> Self {
     Self {
-      claude: Client::new(claude_key, crate::claude::Model::Haiku35),
+      claude: Client::new(claude_key, crate::claude::Model::Sonnet35),
       channels: HashMap::new(),
       storage: Storage::new(Path::new(storage_dir)).unwrap(),
       cmd_regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
