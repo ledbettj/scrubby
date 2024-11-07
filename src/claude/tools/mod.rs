@@ -46,7 +46,7 @@ impl FetchTool {
 
     Self(ToolMetadata {
       name: "fetch_url".into(),
-      description: "Retrieve the textual representation of a given webpage".into(),
+      description: "Retrieve the textual representation of a given webpage.  This tool should only be used when you are explicitly asked to fetch a webpage.".into(),
       input_schema,
     })
   }
