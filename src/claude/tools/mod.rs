@@ -67,8 +67,11 @@ impl Tool for FetchTool {
     let body = resp.into_string().map_err(|e| e.to_string())?;
 
     let doc = scraper::Html::parse_document(&body);
-    let text = doc.root_element().text().collect::<Vec<_>>();
-
-    Ok(Some(text.join("")))
+    let mut text = doc.root_element().text().collect::<Vec<_>>().join("");
+    if text.len() > 1200 {
+      text = text[..1024].to_string();
+      text += " <truncated>";
+    }
+    Ok(Some(text))
   }
 }
