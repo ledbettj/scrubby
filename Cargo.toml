@@ -22,3 +22,6 @@ rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
 handlebars = "6.1.0"
 ureq = "2.10.1"
 scraper = "0.21.0"
+whisper-rs = "0.13.2"
+magnum = "1.0.1"
+itertools = "0.13.0"
