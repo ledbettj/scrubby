@@ -1,26 +1,28 @@
 use crate::channel::Channel;
-use crate::claude::tools::ToolCollection;
-use crate::claude::{self, Client, Content, ImageSource, Interaction, Model, Response, Role};
+use crate::claude::{
+  self, tools::*, Client, Content, ImageSource, Interaction, Model, Response, Role,
+};
 use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent, ThreadUpdateEvent};
 use crate::storage::Storage;
 use base64::prelude::*;
 use log::{debug, error, info, trace};
 use regex::Regex;
-use serenity::all::{Channel as DChannel, ChannelId, ChannelType, GuildChannel, MessageType};
+use serenity::all::{Channel as DChannel, ChannelId, ChannelType, GuildChannel};
 use serenity::prelude::CacheHttp;
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::join;
 use tokio::sync::mpsc::UnboundedReceiver;
 
+/// Output from the LLM in response to a user message.
 pub enum BotResponse {
   Text(String),
   Error(anyhow::Error),
 }
 
-impl Into<String> for BotResponse {
-  fn into(self) -> String {
-    match self {
+impl From<BotResponse> for String {
+  fn from(val: BotResponse) -> Self {
+    match val {
       BotResponse::Text(s) => s.trim().into(),
       BotResponse::Error(e) => format!(":skull: \n```\n{}\n```", e.to_string()).into(),
     }
@@ -38,11 +40,11 @@ pub struct EventHandler {
 impl EventHandler {
   fn new(storage_dir: &str, claude_key: &str) -> Self {
     Self {
-      claude: Client::new(claude_key, crate::claude::Model::Sonnet35),
+      claude: Client::new(claude_key, claude::Model::Sonnet35),
       channels: HashMap::new(),
       storage: Storage::new(Path::new(storage_dir)).unwrap(),
       cmd_regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
-      tools: vec![Box::new(crate::claude::tools::FetchTool::new())],
+      tools: vec![Box::new(FetchTool::new())],
     }
   }
 
@@ -132,7 +134,7 @@ impl EventHandler {
       .or_insert_with(|| Channel::new(id, limit));
 
     channel.ensure_valid_history();
-    channel.append_user(msg_content);
+    channel.user_message(msg_content);
 
     if !is_respondable {
       return;
@@ -169,7 +171,7 @@ impl EventHandler {
           error!("{}", e);
 
           channel
-            .get_history()
+            .history()
             .iter()
             .for_each(|item| trace!("{:?}", item));
 
@@ -316,7 +318,7 @@ impl EventHandler {
       } else {
         Some(Model::Haiku35)
       };
-      let history = channel.get_history();
+      let history = channel.history();
       done = true;
       debug!(
         "Claude Considering: {:?} with {} prior messages",
@@ -336,7 +338,7 @@ impl EventHandler {
 
       match resp {
         Ok(Response::Message { content, .. }) => {
-          channel.append_bot(Interaction {
+          channel.bot_message(Interaction {
             role: Role::Assistant,
             content: content.clone(),
           });
@@ -376,7 +378,7 @@ impl EventHandler {
             }
           }
           if !tool_output.is_empty() {
-            channel.append_bot(Interaction {
+            channel.bot_message(Interaction {
               role: Role::User,
               content: tool_output,
             });

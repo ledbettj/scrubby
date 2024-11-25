@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::Schema;
 use super::Tool as ToolMetadata;
 
@@ -30,24 +28,14 @@ pub struct FetchTool(ToolMetadata);
 
 impl FetchTool {
   pub fn new() -> Self {
-    let mut properties = HashMap::new();
-    properties.insert(
-      "url".into(),
-      Schema::String {
-        description: "the full path to a website to retrieve, starting with http:// or https://"
-          .into(),
-      },
-    );
-
-    let input_schema = Schema::Object {
-      properties,
-      required: vec!["url".into()],
-    };
-
     Self(ToolMetadata {
       name: "fetch_url".into(),
       description: "Retrieve the textual representation of a given webpage.  This tool should only be used when you are explicitly asked to fetch a webpage.".into(),
-      input_schema,
+      input_schema: Schema::object().with_property(
+        "url",
+        Schema::string("the full path to a website to retrieve, starting with http:// or https://"),
+        true,
+      ),
     })
   }
 }
@@ -63,6 +51,7 @@ impl Tool for FetchTool {
       .and_then(|obj| obj.get("url"))
       .and_then(|s| s.as_str())
       .ok_or("No URL provided!".to_string())?;
+
     let resp = ureq::get(url).call().map_err(|e| e.to_string())?;
     let body = resp.into_string().map_err(|e| e.to_string())?;
 

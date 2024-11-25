@@ -7,8 +7,15 @@ use std::path::Path;
 
 use crate::PROMPT_TEMPLATE;
 
-const DEFAULT_PERSONALITY: &'static str = "friendly and enthusiastic. Feel free to use some good-natured insults or jabs. You can use some emoji sparingly";
+/// If no personality is set for a given guild, this is the default.
+const DEFAULT_PERSONALITY: &'static str = "Neutral and informative. Feel free to use some good-natured insults or jabs. You can use some emoji sparingly";
 
+/// Simple wrapper around a SQLite database connection.
+pub struct Storage {
+  conn: Connection,
+}
+
+/// Corresponds to a row in the `guild_config` table.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct GuildConfig {
@@ -18,6 +25,8 @@ pub struct GuildConfig {
 }
 
 impl GuildConfig {
+  /// Returns the system prompt for the guild.
+  /// If the guild has a custom personality, it will be used; otherwise we fall back to the default personality.
   pub fn system(&self) -> String {
     let mut tmpl = Handlebars::new();
     let mut map = HashMap::new();
@@ -38,11 +47,8 @@ impl GuildConfig {
   }
 }
 
-pub struct Storage {
-  conn: Connection,
-}
-
 impl Storage {
+  /// Instantiates a new `Storage` instance, connecting to the SQLite database at the given path.
   pub fn new(p: &Path) -> SqlResult<Self> {
     let db = p.join("storage.sqlite3");
     let conn = Connection::open(db)?;
@@ -52,6 +58,8 @@ impl Storage {
     Ok(storage)
   }
 
+  /// Invoked when the bot is first started, to ensure that the database contains rows for all
+  /// connected servers.
   pub fn ensure_config(&self, id: u64) {
     info!("Ensuring guild {:?} exists", id);
 
@@ -64,7 +72,9 @@ impl Storage {
       .ok();
   }
 
+  /// Updates the configuration for a given guild, adding a new key-value pair to the config JSON.
   pub fn update_config(&self, id: u64, key: &str, val: &str) -> SqlResult<()> {
+    // this would be dangerous, but the key is restricted to alphanumeric characters by the cmd_regex.
     let key = format!("$.{}", key);
     self.ensure_config(id);
     self.conn.execute(

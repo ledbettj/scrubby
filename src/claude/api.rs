@@ -1,5 +1,4 @@
 use super::retry::Retry5xx;
-use super::tools::ToolCollection;
 use super::Content;
 use super::Schema;
 
