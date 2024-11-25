@@ -1,7 +1,7 @@
-use std::{fs::File, path::Path};
-
 use itertools::Itertools;
+use log::debug;
 use magnum::container::ogg::OpusSourceOgg;
+use std::{fs::File, path::Path};
 use whisper_rs::{
   FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperError,
 };
@@ -15,7 +15,7 @@ impl<'a> AudioHandler<'a> {
   pub fn new<S: AsRef<str>>(model_path: S) -> anyhow::Result<AudioHandler<'a>> {
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
 
-    params.set_detect_language(true);
+    // params.set_detect_language(true);
     params.set_print_progress(false);
     params.set_print_special(false);
     params.set_print_timestamps(false);
@@ -42,8 +42,12 @@ impl<'a> AudioHandler<'a> {
     state.full(self.params.clone(), &converted[..])?;
 
     let segment_count = state.full_n_segments()?;
+
+    debug!("segments: {:?}", segment_count);
+
     let text = (0..segment_count)
       .map(|i| state.full_get_segment_text(i))
+      .inspect(|i| debug!("segment: {:?}", i))
       .collect::<Result<Vec<String>, WhisperError>>()?
       .join(" ");
 

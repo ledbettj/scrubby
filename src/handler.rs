@@ -271,12 +271,19 @@ impl<'a> EventHandler<'a> {
             }
           }
         }
-        Some("audio/ogg") => {
+        Some("NOPEaudio/ogg") | Some("NOPEapplication/ogg") => {
           if let Ok(bytes) = attachment.download().await {
             if let Ok(transcript) = audio.tts(&bytes) {
+              debug!("Transcription output: {:?}", &transcript);
+              if !transcript.is_empty() {
+                items.push(Content::Text {
+                  text: transcript,
+                })
+              }
+            } else {
               items.push(Content::Text {
-                text: format!("<document source=\"audio\">{}</document>", transcript,),
-              })
+                  text: "I shared an audio file with you, but you didn't understand it".into(),
+                })
             }
           }
         }
