@@ -1,3 +1,4 @@
+use crate::audio::AudioHandler;
 use crate::channel::Channel;
 use crate::claude::{
   self, tools::*, Client, Content, ImageSource, Interaction, Model, Response, Role,
@@ -29,15 +30,16 @@ impl From<BotResponse> for String {
   }
 }
 
-pub struct EventHandler {
+pub struct EventHandler<'a> {
   claude: Client,
   channels: HashMap<ChannelId, Channel>,
   storage: Storage,
   cmd_regex: Regex,
   tools: ToolCollection,
+  audio: crate::audio::AudioHandler<'a>,
 }
 
-impl EventHandler {
+impl<'a> EventHandler<'a> {
   fn new(storage_dir: &str, claude_key: &str) -> Self {
     Self {
       claude: Client::new(claude_key, claude::Model::Sonnet35),
@@ -45,6 +47,7 @@ impl EventHandler {
       storage: Storage::new(Path::new(storage_dir)).unwrap(),
       cmd_regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
       tools: vec![Box::new(FetchTool::new())],
+      audio: crate::audio::AudioHandler::new("./storage/base.bin").unwrap(),
     }
   }
 
@@ -99,7 +102,7 @@ impl EventHandler {
   async fn on_message(&mut self, event: &MsgEvent) {
     let (is_respondable, msg_content) = join!(
       Self::event_is_respondable(event),
-      Self::msg_to_content(event)
+      Self::msg_to_content(event, &self.audio)
     );
 
     if is_respondable {
@@ -229,7 +232,7 @@ impl EventHandler {
     }
   }
 
-  async fn msg_to_content(event: &MsgEvent) -> Vec<Content> {
+  async fn msg_to_content(event: &MsgEvent, audio: &'_ AudioHandler<'_>) -> Vec<Content> {
     let mut items = vec![];
     let text = event
       .msg
@@ -264,6 +267,15 @@ impl EventHandler {
                   media_type: "image/png".into(),
                   data,
                 },
+              })
+            }
+          }
+        }
+        Some("audio/ogg") => {
+          if let Ok(bytes) = attachment.download().await {
+            if let Ok(transcript) = audio.tts(&bytes) {
+              items.push(Content::Text {
+                text: format!("<document source=\"audio\">{}</document>", transcript,),
               })
             }
           }
