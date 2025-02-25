@@ -23,6 +23,8 @@ pub enum Model {
   Sonnet,
   #[serde(rename = "claude-3-5-sonnet-latest")]
   Sonnet35,
+  #[serde(rename = "claude-3-7-sonnet-latest")]
+  Sonnet37,
   #[serde(rename = "claude-3-5-haiku-latest")]
   Haiku35,
 }

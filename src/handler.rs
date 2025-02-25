@@ -42,7 +42,7 @@ pub struct EventHandler<'a> {
 impl<'a> EventHandler<'a> {
   fn new(storage_dir: &str, claude_key: &str) -> Self {
     Self {
-      claude: Client::new(claude_key, claude::Model::Sonnet35),
+      claude: Client::new(claude_key, claude::Model::Sonnet37),
       channels: HashMap::new(),
       storage: Storage::new(Path::new(storage_dir)).unwrap(),
       cmd_regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
@@ -276,14 +276,12 @@ impl<'a> EventHandler<'a> {
             if let Ok(transcript) = audio.tts(&bytes) {
               debug!("Transcription output: {:?}", &transcript);
               if !transcript.is_empty() {
-                items.push(Content::Text {
-                  text: transcript,
-                })
+                items.push(Content::Text { text: transcript })
               }
             } else {
               items.push(Content::Text {
-                  text: "I shared an audio file with you, but you didn't understand it".into(),
-                })
+                text: "I shared an audio file with you, but you didn't understand it".into(),
+              })
             }
           }
         }
