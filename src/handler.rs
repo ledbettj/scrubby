@@ -7,7 +7,7 @@ use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent, ThreadUpdateEvent};
 use crate::storage::Storage;
 use base64::prelude::*;
 use log::{debug, error, info, trace};
-use regex::Regex;
+use regex::{Captures, Regex};
 use serenity::all::{Channel as DChannel, ChannelId, ChannelType, GuildChannel};
 use serenity::prelude::CacheHttp;
 use std::collections::HashMap;
@@ -34,18 +34,50 @@ pub struct EventHandler<'a> {
   claude: Client,
   channels: HashMap<ChannelId, Channel>,
   storage: Storage,
-  cmd_regex: Regex,
+  commands: Vec<Command>,
   tools: ToolCollection,
   audio: crate::audio::AudioHandler<'a>,
 }
 
+struct Command {
+  regex: Regex,
+  invoke: fn(&mut EventHandler, &Captures<'_>, &MsgEvent) -> Option<String>,
+}
+
 impl<'a> EventHandler<'a> {
   fn new(storage_dir: &str, claude_key: &str) -> Self {
+    let set = Command {
+      regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
+      invoke: |handler, cap, event| {
+        let key = cap.get(1).unwrap().as_str().to_lowercase();
+        let val = cap.get(2).unwrap().as_str().trim();
+        if let Some(id) = event.msg.guild_id {
+          info!("Setting {:?} {} = {}", id, key, val);
+          handler.storage.update_config(id.into(), &key, val).ok();
+        }
+        None
+      },
+    };
+
+    let get = Command {
+      regex: Regex::new(r#"(?ms)get-var\s+([A-Za-z_]+)"#).unwrap(),
+      invoke: |handler, cap, event| {
+        let key = cap.get(1).unwrap().as_str().to_lowercase();
+        if let Some(id) = event.msg.guild_id {
+          info!("Getting {:?} {}", id, key);
+          if let Ok(Some(val)) = handler.storage.get_var(id.into(), &key) {
+            return Some(val);
+          }
+        }
+        None
+      },
+    };
+
     Self {
       claude: Client::new(claude_key, claude::Model::Sonnet37),
       channels: HashMap::new(),
       storage: Storage::new(Path::new(storage_dir)).unwrap(),
-      cmd_regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
+      commands: vec![set, get],
       tools: vec![Box::new(FetchTool::new())],
       audio: crate::audio::AudioHandler::new("./storage/base.bin").unwrap(),
     }
@@ -62,14 +94,10 @@ impl<'a> EventHandler<'a> {
   async fn on_command(&mut self, event: &MsgEvent) -> Option<Option<String>> {
     let content = &event.msg.content;
 
-    if let Some(cap) = self.cmd_regex.captures(content) {
-      let key = cap.get(1).unwrap().as_str().to_lowercase();
-      let val = cap.get(2).unwrap().as_str().trim();
-      if let Some(id) = event.msg.guild_id {
-        info!("Setting {:?} {} = {}", id, key, val);
-        self.storage.update_config(id.into(), &key, val).ok();
+    for cmd in &self.commands {
+      if let Some(cap) = cmd.regex.captures(content) {
+        return Some((cmd.invoke)(self, &cap, event));
       }
-      return Some(None);
     }
 
     None

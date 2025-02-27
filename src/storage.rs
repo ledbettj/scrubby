@@ -85,6 +85,17 @@ impl Storage {
     Ok(())
   }
 
+  pub fn get_var(&self, id: u64, key: &str) -> SqlResult<Option<String>> {
+    Ok(
+      self
+        .guild_config(id)?
+        .config
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_owned()),
+    )
+  }
+
   pub fn guild_config(&self, id: u64) -> SqlResult<GuildConfig> {
     self
       .conn
