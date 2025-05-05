@@ -1,4 +1,4 @@
-FROM rust:1.80-slim-bookworm AS chef
+FROM rust:1.86-slim-bookworm AS chef
 RUN cargo install cargo-chef
 WORKDIR /app
 
