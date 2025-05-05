@@ -73,11 +73,21 @@ impl<'a> EventHandler<'a> {
       },
     };
 
+    let forget = Command {
+      regex: Regex::new(r#"(?ms)forget-history"#).unwrap(),
+      invoke: |handler, _cap, event| {
+        let id = event.msg.channel_id;
+        info!("Forgetting history for {:?}", id);
+        handler.channels.remove(&id);
+        return Some("I didn't see nothin'".into());
+      },
+    };
+
     Self {
       claude: Client::new(claude_key, claude::Model::Sonnet37),
       channels: HashMap::new(),
       storage: Storage::new(Path::new(storage_dir)).unwrap(),
-      commands: vec![set, get],
+      commands: vec![set, get, forget],
       tools: vec![Box::new(FetchTool::new())],
       audio: crate::audio::AudioHandler::new("./storage/base.bin").unwrap(),
     }
