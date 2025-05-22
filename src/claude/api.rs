@@ -25,6 +25,8 @@ pub enum Model {
   Sonnet35,
   #[serde(rename = "claude-3-7-sonnet-latest")]
   Sonnet37,
+  #[serde(rename = "claude-4-sonnet-latest")]
+  Sonnet4,
   #[serde(rename = "claude-3-5-haiku-latest")]
   Haiku35,
 }
@@ -54,6 +56,22 @@ struct Request<'a> {
 pub struct Usage {
   pub input_tokens: usize,
   pub output_tokens: usize,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ModelDetails {
+  pub id: String,
+  pub display_name: String,
+  pub r#type: String,
+  pub created_at: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ListModelsResponse {
+  pub data: Vec<ModelDetails>,
+  pub first_id: String,
+  pub has_more: bool,
+  pub last_id: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -117,6 +135,32 @@ impl Client {
       model,
     }
   }
+
+  // this function is only for testing and may panic
+  pub async fn models(&self) -> ListModelsResponse {
+    let client = reqwest::Client::new();
+    let resp = client
+      .get("https://api.anthropic.com/v1/models")
+      .header("X-API-Key", &self.api_key)
+      .header("Anthropic-Version", "2023-06-01")
+      .send()
+      .await
+      .unwrap();
+
+    if !resp.status().is_success() {
+      panic!();
+    }
+
+    let body = resp
+      .text()
+      .await
+      .map_err(|e| reqwest_middleware::Error::Reqwest(e))
+      .unwrap();
+
+    let resp: ListModelsResponse = serde_json::from_str(&body).unwrap();
+    resp
+  }
+
   pub async fn create_message(
     &self,
     model_override: Option<Model>,

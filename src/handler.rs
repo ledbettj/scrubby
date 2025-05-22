@@ -84,7 +84,7 @@ impl<'a> EventHandler<'a> {
     };
 
     Self {
-      claude: Client::new(claude_key, claude::Model::Sonnet37),
+      claude: Client::new(claude_key, claude::Model::Sonnet4),
       channels: HashMap::new(),
       storage: Storage::new(Path::new(storage_dir)).unwrap(),
       commands: vec![set, get, forget],
