@@ -18,7 +18,7 @@ pub fn invoke_tool(
 ) -> Result<Option<String>, String> {
   let tool = collection
     .iter_mut()
-    .find(|tool| tool.metadata().name == name)
+    .find(|tool| tool.metadata().name() == name)
     .ok_or_else(|| "No tool found!".to_string())?;
 
   tool.invoke(input)
@@ -28,7 +28,7 @@ pub struct FetchTool(ToolMetadata);
 
 impl FetchTool {
   pub fn new() -> Self {
-    Self(ToolMetadata {
+    Self(ToolMetadata::Custom {
       name: "fetch_url".into(),
       description: "Retrieve the textual representation of a given webpage.  This tool should only be used when you are explicitly asked to fetch a webpage.".into(),
       input_schema: Schema::object().with_property(

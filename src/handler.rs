@@ -1,11 +1,12 @@
 use crate::audio::AudioHandler;
 use crate::channel::Channel;
 use crate::claude::{
-  self, tools::*, Client, Content, ImageSource, Interaction, Model, Response, Role,
+  self, tools::*, Client, Content, ImageSource, Interaction, Model, Response, Role, Tool,
 };
 use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent, ThreadUpdateEvent};
 use crate::storage::Storage;
 use base64::prelude::*;
+use itertools::Itertools;
 use log::{debug, error, info, trace};
 use regex::{Captures, Regex};
 use serenity::all::{Channel as DChannel, ChannelId, ChannelType, GuildChannel};
@@ -88,7 +89,7 @@ impl<'a> EventHandler<'a> {
       channels: HashMap::new(),
       storage: Storage::new(Path::new(storage_dir)).unwrap(),
       commands: vec![set, get, forget],
-      tools: vec![Box::new(FetchTool::new())],
+      tools: vec![], //vec![Box::new(FetchTool::new())],
       audio: crate::audio::AudioHandler::new("./storage/base.bin").unwrap(),
     }
   }
@@ -287,7 +288,7 @@ impl<'a> EventHandler<'a> {
 
     if !text.is_empty() {
       let text = format!("{}: {}", author, text).to_owned();
-      items.push(Content::Text { text })
+      items.push(Content::text(text));
     }
 
     for attachment in &event.msg.attachments {
@@ -314,12 +315,12 @@ impl<'a> EventHandler<'a> {
             if let Ok(transcript) = audio.tts(&bytes) {
               debug!("Transcription output: {:?}", &transcript);
               if !transcript.is_empty() {
-                items.push(Content::Text { text: transcript })
+                items.push(Content::text(transcript));
               }
             } else {
-              items.push(Content::Text {
-                text: "I shared an audio file with you, but you didn't understand it".into(),
-              })
+              items.push(Content::text(
+                "I shared an audio file with you, but you didn't understand it",
+              ));
             }
           }
         }
@@ -327,12 +328,10 @@ impl<'a> EventHandler<'a> {
           if let Ok(bytes) = attachment.download().await {
             match String::from_utf8(bytes) {
               Err(e) => error!("Failed to decode text attachment: {}", e),
-              Ok(s) => items.push(Content::Text {
-                text: format!(
-                  "<document name=\"{}\">\n{}</document>",
-                  attachment.filename, s
-                ),
-              }),
+              Ok(s) => items.push(Content::text(format!(
+                "<document name=\"{}\">\n{}</document>",
+                attachment.filename, s
+              ))),
             }
           }
         }
@@ -340,12 +339,10 @@ impl<'a> EventHandler<'a> {
           if let Ok(bytes) = attachment.download().await {
             match String::from_utf8(bytes) {
               Err(e) => error!("Failed to decode text attachment: {}", e),
-              Ok(s) => items.push(Content::Text {
-                text: format!(
-                  "<document name=\"{}\">\n{}</document>",
-                  attachment.filename, s
-                ),
-              }),
+              Ok(s) => items.push(Content::text(format!(
+                "<document name=\"{}\">\n{}</document>",
+                attachment.filename, s
+              ))),
             }
           }
         }
@@ -381,11 +378,14 @@ impl<'a> EventHandler<'a> {
         history.len() - 1
       );
 
-      let tool_meta = tools
+      let mut tool_meta = tools
         .iter()
         .map(|t| t.metadata())
         .cloned()
         .collect::<Vec<_>>();
+
+      tool_meta.push(claude::Tool::web_search(3, None));
+
       let resp = claude
         .create_message(model, &history, &tool_meta, prompt.clone())
         .await;
@@ -402,7 +402,18 @@ impl<'a> EventHandler<'a> {
 
           for content in content.into_iter() {
             match content {
-              Content::Text { text } => {
+              Content::Text {
+                text,
+                citations: Some(citations),
+              } if !citations.is_empty() => {
+                let citations = citations
+                  .iter()
+                  .map(|c| format!("- `{}`\n", c.url))
+                  .unique()
+                  .collect::<String>();
+                output.push(format!("{}\n\nCitations:\n{}", text, citations));
+              }
+              Content::Text { text, .. } => {
                 output.push(text.clone());
               }
               Content::ToolUse { id, name, input } => {
@@ -427,6 +438,9 @@ impl<'a> EventHandler<'a> {
                   },
                 };
                 tool_output.push(tool_content);
+              }
+              Content::ServerToolUse { .. } | Content::WebSearchToolResult { .. } => {
+                /* nothing to do here */
               }
               // the LLM should never respond with an image or tool result.
               Content::Image { .. } | Content::ToolResult { .. } => unreachable!(),

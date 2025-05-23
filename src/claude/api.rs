@@ -36,11 +36,38 @@ pub struct Interaction {
   pub content: Vec<Content>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Tool {
-  pub name: String,
-  pub description: String,
-  pub input_schema: Schema,
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "snake_case", untagged)]
+pub enum Tool {
+  WebSearch {
+    r#type: String,
+    name: String,
+    max_uses: usize,
+    blocked_domains: Option<Vec<String>>,
+  },
+  Custom {
+    name: String,
+    description: String,
+    input_schema: Schema,
+  },
+}
+
+impl Tool {
+  pub fn name(&self) -> &str {
+    match self {
+      Tool::WebSearch { name, .. } => name,
+      Tool::Custom { name, .. } => name,
+    }
+  }
+
+  pub fn web_search(max_uses: usize, blocked_domains: Option<Vec<String>>) -> Self {
+    Tool::WebSearch {
+      r#type: "web_search_20250305".into(),
+      name: "web_search".into(),
+      max_uses,
+      blocked_domains,
+    }
+  }
 }
 
 #[derive(Serialize)]
