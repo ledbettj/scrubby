@@ -1,7 +1,7 @@
 use crate::audio::AudioHandler;
 use crate::channel::Channel;
 use crate::claude::{
-  self, Client, Content, ImageSource, Interaction, Model, Response, Role, Tool, tools::*,
+  self, tools::*, Client, Content, ImageSource, Interaction, Model, Response, Role, Tool,
 };
 use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent, ThreadUpdateEvent};
 use crate::storage::Storage;
@@ -16,12 +16,15 @@ use std::path::Path;
 use tokio::join;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-/// Output from the LLM in response to a user message.
+/// Represents the bot's response to a user message.
+/// Can be either successful text output or an error that occurred during processing.
 pub enum BotResponse {
   Text(String),
   Error(anyhow::Error),
 }
 
+/// Converts bot responses into Discord-formatted strings.
+/// Formats errors with skull emoji and code blocks for visibility.
 impl From<BotResponse> for String {
   fn from(val: BotResponse) -> Self {
     match val {
@@ -31,6 +34,8 @@ impl From<BotResponse> for String {
   }
 }
 
+/// Main bot event handler that processes Discord events and generates AI responses.
+/// Manages conversation state, bot commands, and Claude AI integration.
 pub struct EventHandler<'a> {
   claude: Client,
   channels: HashMap<ChannelId, Channel>,
@@ -40,12 +45,16 @@ pub struct EventHandler<'a> {
   audio: Option<crate::audio::AudioHandler<'a>>,
 }
 
+/// Represents a bot command that can be invoked via regex pattern matching.
+/// Commands provide direct bot functionality like configuration management.
 struct Command {
   regex: Regex,
   invoke: fn(&mut EventHandler, &Captures<'_>, &MsgEvent) -> Option<String>,
 }
 
 impl<'a> EventHandler<'a> {
+  /// Creates a new event handler with Claude client and bot commands.
+  /// Initializes storage, sets up built-in commands, and configures audio if enabled.
   fn new(storage_dir: &str, claude_key: &str) -> Self {
     let set = Command {
       regex: Regex::new(r#"(?ms)set-var\s+([A-Za-z_]+)\s*=\s*(.+)"#).unwrap(),
@@ -100,6 +109,8 @@ impl<'a> EventHandler<'a> {
     }
   }
 
+  /// Main event processing loop that handles all incoming Discord events.
+  /// Runs continuously, processing events from the dispatcher until shutdown.
   pub async fn start(storage_dir: &str, claude_key: &str, mut rx: UnboundedReceiver<BotEvent>) {
     let mut handler = Self::new(storage_dir, claude_key);
 
@@ -108,6 +119,8 @@ impl<'a> EventHandler<'a> {
     }
   }
 
+  /// Processes bot commands embedded in user messages.
+  /// Returns Some(Some(response)) for commands with output, Some(None) for silent commands, None if no command matched.
   async fn on_command(&mut self, event: &MsgEvent) -> Option<Option<String>> {
     let content = &event.msg.content;
 
@@ -120,6 +133,8 @@ impl<'a> EventHandler<'a> {
     None
   }
 
+  /// Routes incoming Discord events to their appropriate handlers.
+  /// Dispatches messages, ready events, and thread updates to specialized methods.
   async fn on_event(&mut self, event: &BotEvent) {
     match event {
       BotEvent::Message(m) => self.on_message(m).await,
@@ -128,6 +143,8 @@ impl<'a> EventHandler<'a> {
     }
   }
 
+  /// Handles Discord thread lifecycle events for conversation cleanup.
+  /// Removes conversation history when threads are archived to prevent memory leaks.
   fn on_thread_update(&mut self, event: &ThreadUpdateEvent) {
     if let Some(metadata) = event.new.thread_metadata {
       if metadata.archived {
@@ -137,6 +154,8 @@ impl<'a> EventHandler<'a> {
     }
   }
 
+  /// Initializes bot state when Discord connection is established.
+  /// Ensures database configuration exists for all guilds the bot has access to.
   fn on_ready(&self, event: &ReadyEvent) {
     event
       .guilds
@@ -144,6 +163,9 @@ impl<'a> EventHandler<'a> {
       .for_each(|&guild_id| self.storage.ensure_config(guild_id.into()));
   }
 
+  /// Core message processing logic that handles user interactions.
+  /// Determines response eligibility, processes commands, manages conversation history,
+  /// and coordinates with Claude AI to generate responses.
   async fn on_message(&mut self, event: &MsgEvent) {
     let (is_respondable, msg_content) = join!(
       Self::event_is_respondable(event),
@@ -259,6 +281,8 @@ impl<'a> EventHandler<'a> {
     // }
   }
 
+  /// Determines if the bot should respond to a particular message.
+  /// Considers factors like self-messages, mentions, DMs, and thread participation.
   async fn event_is_respondable(event: &MsgEvent) -> bool {
     // dont respond to your own messages
     if event.msg.author.id == event.ctx.cache.current_user().id {
@@ -294,6 +318,8 @@ impl<'a> EventHandler<'a> {
     }
   }
 
+  /// Converts Discord message data into Claude-compatible content format.
+  /// Processes text, images, audio transcriptions, and document attachments for AI consumption.
   async fn msg_to_content(event: &MsgEvent, audio: &'_ Option<AudioHandler<'_>>) -> Vec<Content> {
     let mut items = vec![];
     let text = event
@@ -378,6 +404,9 @@ impl<'a> EventHandler<'a> {
     items
   }
 
+  /// Manages the conversation flow with Claude AI, including tool usage.
+  /// Handles the request-response cycle, processes tool calls, and manages model selection
+  /// based on conversation content (images require vision-capable models).
   async fn dispatch_llm(
     channel: &mut Channel,
     prompt: String,

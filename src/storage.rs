@@ -7,15 +7,17 @@ use std::path::Path;
 
 use crate::PROMPT_TEMPLATE;
 
-/// If no personality is set for a given guild, this is the default.
+/// Default personality used when guilds don't have custom configuration.
 const DEFAULT_PERSONALITY: &'static str = "Neutral and informative. Feel free to use some good-natured insults or jabs. You can use some emoji sparingly";
 
-/// Simple wrapper around a SQLite database connection.
+/// Manages guild configuration persistence using SQLite storage.
+/// Handles bot personality settings and other per-guild customizations.
 pub struct Storage {
   conn: Connection,
 }
 
-/// Corresponds to a row in the `guild_config` table.
+/// Represents a Discord guild's configuration stored in the database.
+/// Contains customizable settings like personality that affect bot behavior.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct GuildConfig {
@@ -25,8 +27,9 @@ pub struct GuildConfig {
 }
 
 impl GuildConfig {
-  /// Returns the system prompt for the guild.
-  /// If the guild has a custom personality, it will be used; otherwise we fall back to the default personality.
+  /// Generates the system prompt for Claude using guild-specific configuration.
+  /// Applies custom personality settings or falls back to defaults, then renders
+  /// the prompt template with the appropriate variables.
   pub fn system(&self) -> String {
     let mut tmpl = Handlebars::new();
     let mut map = HashMap::new();
@@ -48,7 +51,8 @@ impl GuildConfig {
 }
 
 impl Storage {
-  /// Instantiates a new `Storage` instance, connecting to the SQLite database at the given path.
+  /// Creates a new storage instance and initializes the SQLite database.
+  /// Sets up the database schema and ensures required tables exist.
   pub fn new(p: &Path) -> SqlResult<Self> {
     let db = p.join("storage.sqlite3");
     let conn = Connection::open(db)?;
@@ -58,8 +62,9 @@ impl Storage {
     Ok(storage)
   }
 
-  /// Invoked when the bot is first started, to ensure that the database contains rows for all
-  /// connected servers.
+  /// Ensures a guild has a configuration record in the database.
+  /// Creates a default configuration entry if one doesn't exist, preventing
+  /// errors when the bot tries to access guild settings.
   pub fn ensure_config(&self, id: u64) {
     info!("Ensuring guild {:?} exists", id);
 
@@ -72,7 +77,9 @@ impl Storage {
       .ok();
   }
 
-  /// Updates the configuration for a given guild, adding a new key-value pair to the config JSON.
+  /// Updates a specific configuration value for a guild.
+  /// Modifies the JSON configuration by setting a key-value pair, with input
+  /// validation ensured by the calling command regex patterns.
   pub fn update_config(&self, id: u64, key: &str, val: &str) -> SqlResult<()> {
     // this would be dangerous, but the key is restricted to alphanumeric characters by the cmd_regex.
     let key = format!("$.{}", key);
@@ -85,6 +92,8 @@ impl Storage {
     Ok(())
   }
 
+  /// Retrieves a specific configuration variable for a guild.
+  /// Returns the string value if found, or None if the key doesn't exist.
   pub fn get_var(&self, id: u64, key: &str) -> SqlResult<Option<String>> {
     Ok(
       self
@@ -96,6 +105,9 @@ impl Storage {
     )
   }
 
+  /// Fetches the complete configuration for a guild.
+  /// Returns a default configuration with null values if no record exists,
+  /// ensuring the bot can always operate even for new guilds.
   pub fn guild_config(&self, id: u64) -> SqlResult<GuildConfig> {
     self
       .conn
@@ -119,6 +131,9 @@ impl Storage {
       })
   }
 
+  /// Initializes the database schema and creates required tables.
+  /// Sets up the guild_config table with proper indexing and creates
+  /// a default global configuration (guild_id = 0) for fallback behavior.
   fn ensure(&self) -> SqlResult<()> {
     self.conn.execute(
       "CREATE TABLE IF NOT EXISTS guild_config (

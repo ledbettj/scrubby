@@ -5,8 +5,8 @@ use serenity::all::ChannelId;
 
 use crate::claude::{Content, Interaction, Role};
 
-/// A a Discord channel.
-/// Claude treats each channel individually, so each channel has its own history and limit on messages in the history window.
+/// Represents a Discord channel with conversation history.
+/// Each channel maintains its own conversation context and history limits for Claude AI interactions.
 pub struct Channel {
   hist: VecDeque<Interaction>,
   limit: Option<usize>,
@@ -26,12 +26,14 @@ impl Channel {
     }
   }
 
+  /// Returns the conversation history as a contiguous slice.
+  /// This ensures the VecDeque is organized in memory for efficient access.
   pub fn history(&mut self) -> &[Interaction] {
     self.hist.make_contiguous()
   }
 
-  /// Check if the interaction history contains any images.
-  /// If so, we'll need to use an image-enabled LLM to process the next message.
+  /// Determines if the conversation history contains any image content.
+  /// This affects which Claude model variant is used, as images require vision-capable models.
   pub fn history_has_images(&self) -> bool {
     self
       .hist
@@ -39,20 +41,20 @@ impl Channel {
       .any(|interaction| interaction.content.iter().any(|content| content.is_image()))
   }
 
-  /// Add a new assistant message to the history.
+  /// Appends a bot (assistant) response to the conversation history.
   pub fn bot_message(&mut self, interaction: Interaction) {
     self.hist.push_back(interaction);
   }
 
-  /// Remove the last message from the history, in case something went wrong
+  /// Removes the most recent interaction from history.
+  /// Used for error recovery when a message processing fails.
   pub fn undo_last(&mut self) {
     self.hist.pop_back();
   }
 
-  /// Add a new user message to the history.
-  /// If the previous interaction was also a user message,
-  /// the new message content will be appended to the previous one.
-  /// otherwise, a new user interaction will be created.
+  /// Adds user content to the conversation history.
+  /// Consecutive user messages are merged into a single interaction to maintain
+  /// proper conversation flow for Claude's alternating user/assistant pattern.
   pub fn user_message(&mut self, new_content: Vec<Content>) {
     match self.hist.back_mut() {
       None
@@ -74,9 +76,9 @@ impl Channel {
     }
   }
 
-  /// Reduce the size of the history to the limit for this channel,
-  /// removing the oldest messages first and attempting to remove them in
-  /// pairs to avoid leaving the history in an unprocessable state.
+  /// Enforces the conversation history size limit by removing old messages.
+  /// Messages are removed in pairs (user+assistant) to maintain conversation coherence
+  /// and prevent leaving the history in an invalid state for Claude processing.
   pub fn shrink(&mut self) {
     if let Some(limit) = self.limit {
       while self.hist.len() > limit {
@@ -85,8 +87,9 @@ impl Channel {
     }
   }
 
-  /// Ensure that the history is in a valid state for processing.
-  /// That means that there cannot be two back-to-back assistant messages.
+  /// Validates and cleans the conversation history for Claude API consumption.
+  /// Removes leading assistant messages and empty/tool-only user messages that
+  /// would cause Claude API errors due to invalid conversation structure.
   pub fn ensure_valid_history(&mut self) {
     loop {
       match self.hist.front() {
