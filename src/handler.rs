@@ -1,7 +1,7 @@
 use crate::audio::AudioHandler;
 use crate::channel::Channel;
 use crate::claude::{
-  self, tools::*, Client, Content, ImageSource, Interaction, Model, Response, Role, Tool,
+  self, Client, Content, ImageSource, Interaction, Model, Response, Role, Tool, tools::*,
 };
 use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent, ThreadUpdateEvent};
 use crate::storage::Storage;
@@ -392,6 +392,7 @@ impl<'a> EventHandler<'a> {
         .collect::<Vec<_>>();
 
       tool_meta.push(claude::Tool::web_search(3, None));
+      tool_meta.push(claude::Tool::code_execution());
 
       let resp = claude
         .create_message(model, &history, &tool_meta, prompt.clone())
@@ -446,9 +447,9 @@ impl<'a> EventHandler<'a> {
                 };
                 tool_output.push(tool_content);
               }
-              Content::ServerToolUse { .. } | Content::WebSearchToolResult { .. } => {
-                /* nothing to do here */
-              }
+              Content::ServerToolUse { .. }
+              | Content::WebSearchToolResult { .. }
+              | Content::CodeExecutionToolResult { .. } => { /* nothing to do here */ }
               // the LLM should never respond with an image or tool result.
               Content::Image { .. } | Content::ToolResult { .. } => unreachable!(),
             }

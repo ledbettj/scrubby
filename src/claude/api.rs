@@ -45,6 +45,10 @@ pub enum Tool {
     max_uses: usize,
     blocked_domains: Option<Vec<String>>,
   },
+  CodeExecution {
+    r#type: String,
+    name: String,
+  },
   Custom {
     name: String,
     description: String,
@@ -57,6 +61,7 @@ impl Tool {
     match self {
       Tool::WebSearch { name, .. } => name,
       Tool::Custom { name, .. } => name,
+      Tool::CodeExecution { name, .. } => name,
     }
   }
 
@@ -66,6 +71,13 @@ impl Tool {
       name: "web_search".into(),
       max_uses,
       blocked_domains,
+    }
+  }
+
+  pub fn code_execution() -> Self {
+    Tool::CodeExecution {
+      r#type: "code_execution_20250522".into(),
+      name: "code_execution".into(),
     }
   }
 }
@@ -220,7 +232,10 @@ impl Client {
       .header("Content-Type", "application/json")
       .header("X-API-Key", &self.api_key)
       .header("Anthropic-Version", "2023-06-01")
-      .header("Anthropic-Beta", "tools-2024-05-16")
+      .header(
+        "Anthropic-Beta",
+        "code-execution-2025-05-22,tools-2024-05-16",
+      )
       .body(body)
       .send()
       .await?;

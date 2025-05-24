@@ -40,6 +40,10 @@ pub enum Content {
     tool_use_id: String,
     content: serde_json::Value,
   },
+  CodeExecutionToolResult {
+    tool_use_id: String,
+    content: serde_json::Value,
+  },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
