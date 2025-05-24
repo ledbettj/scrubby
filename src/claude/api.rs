@@ -1,10 +1,10 @@
-use super::retry::Retry5xx;
 use super::Content;
 use super::Schema;
+use super::retry::Retry5xx;
 
 use reqwest_middleware::ClientBuilder;
-use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
+use reqwest_retry::policies::ExponentialBackoff;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -25,7 +25,7 @@ pub enum Model {
   Sonnet35,
   #[serde(rename = "claude-3-7-sonnet-latest")]
   Sonnet37,
-  #[serde(rename = "claude-4-sonnet-latest")]
+  #[serde(rename = "claude-sonnet-4-20250514")]
   Sonnet4,
   #[serde(rename = "claude-3-5-haiku-latest")]
   Haiku35,
