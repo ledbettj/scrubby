@@ -229,17 +229,34 @@ impl<'a> EventHandler<'a> {
 
     channel.shrink();
 
-    for r in replies.into_iter() {
-      let s: String = r.into();
-      if !s.is_empty() {
-        event
-          .msg
-          .reply(&event.ctx.http(), s)
-          .await
-          .map_err(|err| error!("Failed to reply: {}", err))
-          .ok();
-      }
+    // bundle replies into single message.
+    let reply = replies
+      .into_iter()
+      .map(|r| Into::<String>::into(r))
+      .filter(|s| !s.is_empty())
+      .join(" ");
+
+    if !reply.is_empty() {
+      event
+        .msg
+        .reply(&event.ctx.http(), reply)
+        .await
+        .map_err(|err| error!("Failed to reply: {}", err))
+        .ok();
     }
+    // each reply sent individually
+    //
+    // for r in replies.into_iter() {
+    //   let s: String = r.into();
+    //   if !s.is_empty() {
+    //     event
+    //       .msg
+    //       .reply(&event.ctx.http(), s)
+    //       .await
+    //       .map_err(|err| error!("Failed to reply: {}", err))
+    //       .ok();
+    //   }
+    // }
   }
 
   async fn event_is_respondable(event: &MsgEvent) -> bool {
@@ -391,7 +408,7 @@ impl<'a> EventHandler<'a> {
         .cloned()
         .collect::<Vec<_>>();
 
-      tool_meta.push(claude::Tool::web_search(3, None));
+      tool_meta.push(claude::Tool::web_search(1, None));
       tool_meta.push(claude::Tool::code_execution());
 
       let resp = claude
@@ -416,10 +433,10 @@ impl<'a> EventHandler<'a> {
               } if !citations.is_empty() => {
                 let citations = citations
                   .iter()
-                  .map(|c| format!("- `{}`\n", c.url))
+                  .map(|c| format!("`{}`", c.url))
                   .unique()
-                  .collect::<String>();
-                output.push(format!("{}\n\nCitations:\n{}", text, citations));
+                  .join(" ");
+                output.push(format!("{} [{}]", text, citations));
               }
               Content::Text { text, .. } => {
                 output.push(text.clone());

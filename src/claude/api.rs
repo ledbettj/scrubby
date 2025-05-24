@@ -1,10 +1,10 @@
+use super::retry::Retry5xx;
 use super::Content;
 use super::Schema;
-use super::retry::Retry5xx;
 
 use reqwest_middleware::ClientBuilder;
-use reqwest_retry::RetryTransientMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::RetryTransientMiddleware;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
