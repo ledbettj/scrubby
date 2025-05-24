@@ -32,8 +32,11 @@ async fn main() -> anyhow::Result<()> {
 
   let token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKEN is not set");
   let claude_key = env::var("CLAUDE_KEY").expect("No CLAUDE_KEY provided");
+  let audio_enabled = env::var("AUDIO_ENABLED").is_ok();
 
-  AudioHandler::ensure_model(Path::new("./storage/base.bin"));
+  if audio_enabled {
+    AudioHandler::ensure_model(Path::new("./storage/base.bin"));
+  }
 
   let intents = GatewayIntents::GUILD_MESSAGES
     | GatewayIntents::DIRECT_MESSAGES

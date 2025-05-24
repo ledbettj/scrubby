@@ -37,7 +37,7 @@ pub struct EventHandler<'a> {
   storage: Storage,
   commands: Vec<Command>,
   tools: ToolCollection,
-  audio: crate::audio::AudioHandler<'a>,
+  audio: Option<crate::audio::AudioHandler<'a>>,
 }
 
 struct Command {
@@ -84,13 +84,19 @@ impl<'a> EventHandler<'a> {
       },
     };
 
+    let audio = if std::env::var("AUDIO_ENABLED").is_ok() {
+      Some(crate::audio::AudioHandler::new("./storage/base.bin").unwrap())
+    } else {
+      None
+    };
+
     Self {
       claude: Client::new(claude_key, claude::Model::Sonnet4),
       channels: HashMap::new(),
       storage: Storage::new(Path::new(storage_dir)).unwrap(),
       commands: vec![set, get, forget],
-      tools: vec![], //vec![Box::new(FetchTool::new())],
-      audio: crate::audio::AudioHandler::new("./storage/base.bin").unwrap(),
+      tools: vec![],
+      audio,
     }
   }
 
@@ -271,7 +277,7 @@ impl<'a> EventHandler<'a> {
     }
   }
 
-  async fn msg_to_content(event: &MsgEvent, audio: &'_ AudioHandler<'_>) -> Vec<Content> {
+  async fn msg_to_content(event: &MsgEvent, audio: &'_ Option<AudioHandler<'_>>) -> Vec<Content> {
     let mut items = vec![];
     let text = event
       .msg
@@ -310,7 +316,8 @@ impl<'a> EventHandler<'a> {
             }
           }
         }
-        Some("NOPEaudio/ogg") | Some("NOPEapplication/ogg") => {
+        Some("audio/ogg") | Some("application/ogg") if audio.is_some() => {
+          let audio = audio.as_ref().unwrap();
           if let Ok(bytes) = attachment.download().await {
             if let Ok(transcript) = audio.tts(&bytes) {
               debug!("Transcription output: {:?}", &transcript);
