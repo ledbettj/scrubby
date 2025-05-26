@@ -113,3 +113,23 @@ impl Channel {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::claude::Content;
+
+  #[test]
+  fn test_user_message_merging() {
+    let mut channel = Channel::new(ChannelId::new(123), None);
+
+    channel.user_message(vec![Content::text("Hello")]);
+    channel.user_message(vec![Content::text("World")]);
+
+    assert_eq!(channel.history().len(), 1);
+    assert_eq!(
+      channel.history()[0].content,
+      vec![Content::text("Hello"), Content::text("World")]
+    );
+  }
+}
