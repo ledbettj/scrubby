@@ -431,14 +431,11 @@ impl<'a> EventHandler<'a> {
         history.len() - 1
       );
 
-      let mut tool_meta = tools
+      let tool_meta = tools
         .iter()
         .map(|t| t.metadata())
         .cloned()
         .collect::<Vec<_>>();
-
-      tool_meta.push(claude::Tool::web_search(1, None));
-      tool_meta.push(claude::Tool::code_execution());
 
       let resp = claude
         .create_message(model, &history, &tool_meta, prompt.clone())
