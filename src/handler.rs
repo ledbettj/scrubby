@@ -1,7 +1,7 @@
 use crate::audio::AudioHandler;
 use crate::channel::Channel;
 use crate::claude::{
-  self, tools::*, Client, Content, ImageSource, Interaction, Model, Response, Role, Tool,
+  self, Client, Content, ImageSource, Interaction, Model, Response, Role, Tool, tools::*,
 };
 use crate::dispatcher::{BotEvent, MsgEvent, ReadyEvent, ThreadUpdateEvent};
 use crate::storage::Storage;
@@ -9,7 +9,9 @@ use base64::prelude::*;
 use itertools::Itertools;
 use log::{debug, error, info, trace};
 use regex::{Captures, Regex};
-use serenity::all::{Channel as DChannel, ChannelId, ChannelType, GuildChannel};
+use serenity::all::{
+  Channel as DChannel, ChannelId, ChannelType, CreateAttachment, CreateMessage, GuildChannel,
+};
 use serenity::prelude::CacheHttp;
 use std::collections::HashMap;
 use std::path::Path;
@@ -258,7 +260,24 @@ impl<'a> EventHandler<'a> {
       .filter(|s| !s.is_empty())
       .join(" ");
 
-    if !reply.is_empty() {
+    // check if the message is too long (2_000 characters).
+    // if so, convert it to a file attachment.
+    if reply.len() > 2_000 {
+      let attachment = CreateAttachment::bytes(reply.as_bytes(), "scrubby.txt");
+      event
+        .msg
+        .channel_id
+        .send_message(
+          &event.ctx.http(),
+          CreateMessage::new()
+            .add_file(attachment)
+            .content(":eyes:")
+            .reference_message(&event.msg),
+        )
+        .await
+        .map_err(|err| error!("Failed to send message: {}", err))
+        .ok();
+    } else if !reply.is_empty() {
       event
         .msg
         .reply(&event.ctx.http(), reply)
