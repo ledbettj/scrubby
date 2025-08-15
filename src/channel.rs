@@ -69,7 +69,7 @@ impl Channel {
       }
       Some(Interaction {
         role: Role::User,
-        ref mut content,
+        content,
       }) => {
         content.extend(new_content);
       }
