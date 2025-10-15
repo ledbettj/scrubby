@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
   let claude_key = env::var("CLAUDE_KEY").expect("No CLAUDE_KEY provided");
   let audio_enabled = env::var("AUDIO_ENABLED").is_ok();
 
-  let claude = claude::Client::new(claude_key.clone(), claude::Model::Haiku35);
+  let claude = claude::Client::new(claude_key.clone(), claude::Model::Haiku45);
   println!("{:?}", claude.models().await);
 
   if audio_enabled {
